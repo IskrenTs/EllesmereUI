@@ -70,7 +70,7 @@ local CDM_SHAPE_ICON_EXPAND_OFFSETS = {
     portrait = 2, shield = 2, square = 4,
 }
 local CDM_SHAPE_ZOOM_DEFAULTS = {
-    none = 0.08, cropped = 0.02, square = 0.06, circle = 0.06, csquare = 0.06,
+    none = 0.08, cropped = 0.05, square = 0.06, circle = 0.06, csquare = 0.06,
     diamond = 0.06, hexagon = 0.06, portrait = 0.06, shield = 0.06,
 }
 local CDM_SHAPE_EDGE_SCALES = {
@@ -206,6 +206,25 @@ local _tickBlizzActiveCache = {}  -- [spellID] = true when Blizzard CDM marks sp
 local _tickBlizzOverrideCache = {} -- [baseSpellID] = overrideSpellID, built each tick from all CDM viewer children
 local _tickBlizzChildCache = {}    -- [overrideSpellID] = blizzChild, for direct charge/cooldown reads on activation overrides
 local _tickBlizzAllChildCache = {} -- [resolvedSid] = blizzChild, for all CDM children (used by custom bars)
+local _tickBlizzBuffChildCache = {} -- [resolvedSid] = blizzChild, only from BuffIcon/BuffBar viewers
+
+-- Separate tables keyed by child frame reference — avoids reading tainted fields on Blizzard-owned frames.
+-- ch.isActive and ch._ecmeDurObj etc. are tainted secret values; we track state in our own tables instead.
+local _ecmeChildHasDurObj = {}   -- [ch] = true when we have captured a DurationObject for this child
+local _ecmeDurObjCache = {}      -- [ch] = durObj captured from SetCooldownFromDurationObject hook
+local _ecmeRawStartCache = {}    -- [ch] = start captured from SetCooldown hook
+local _ecmeRawDurCache = {}      -- [ch] = dur captured from SetCooldown hook
+
+-- Check if a Blizzard CDM buff-viewer child represents an actively running effect.
+-- Uses only our own tracking tables — never reads tainted fields on the child frame.
+local function IsBufChildCooldownActive(ch)
+    if not ch then return false end
+    -- If we have captured a DurationObject or raw cooldown for this child, it was active.
+    if _ecmeChildHasDurObj[ch] then return true end
+    if _ecmeRawDurCache[ch] then return true end
+    return false
+end
+
 -- spellID -> cooldownID map built once from C_CooldownViewer.GetCooldownViewerCategorySet (all categories).
 -- Rebuilt on PLAYER_LOGIN and spec change. Used by custom bars to find CDM child frames by spellID.
 local _spellToCooldownID = {}
@@ -3167,8 +3186,14 @@ local function UpdateCustomBarIcons(barKey)
                     -- Summon-type fallback: spells with no aura but whose Blizzard CDM
                     -- marks as active are considered active (e.g. pet summons).
                     -- On buff bars, copy the child's cooldown to show effect duration.
+                    -- Also check if the buff-viewer child is visible (covers summon
+                    -- spells like Dreadstalkers that have no aura and no wasSetFromAura).
                     if not hasRuntimeOverride and not auraHandled then
                         local blzFbActive2 = _tickBlizzActiveCache[resolvedID] or _tickBlizzActiveCache[spellID]
+                        if not blzFbActive2 then
+                            local blzBufCh = _tickBlizzBuffChildCache[resolvedID] or _tickBlizzBuffChildCache[spellID]
+                            if IsBufChildCooldownActive(blzBufCh) then blzFbActive2 = true end
+                        end
                         if blzFbActive2 and isBuffBarForOverride then
                             local blzCh2 = _tickBlizzAllChildCache[resolvedID] or _tickBlizzAllChildCache[spellID]
                             auraHandled = true
@@ -3179,10 +3204,10 @@ local function UpdateCustomBarIcons(barKey)
                                 local blzCD = blzCh2.Cooldown
                                 if blzCD then
                                     ourIcon._cooldown:Clear()
-                                    if blzCh2._ecmeDurObj then
-                                        pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, blzCh2._ecmeDurObj, true)
-                                    elseif blzCh2._ecmeRawStart and blzCh2._ecmeRawDur then
-                                        pcall(ourIcon._cooldown.SetCooldown, ourIcon._cooldown, blzCh2._ecmeRawStart, blzCh2._ecmeRawDur)
+                                    if _ecmeDurObjCache[blzCh2] then
+                                        pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, _ecmeDurObjCache[blzCh2], true)
+                                    elseif _ecmeRawStartCache[blzCh2] and _ecmeRawDurCache[blzCh2] then
+                                        pcall(ourIcon._cooldown.SetCooldown, ourIcon._cooldown, _ecmeRawStartCache[blzCh2], _ecmeRawDurCache[blzCh2])
                                     end
                                     ourIcon._cooldown:SetReverse(false)
                                 end
@@ -3225,6 +3250,12 @@ local function UpdateCustomBarIcons(barKey)
                    and not (EllesmereUI._mainFrame and EllesmereUI._mainFrame:IsShown()) then
                     -- Use the per-tick active cache built from all CDM viewers
                     local isActive = _tickBlizzActiveCache[resolvedID] or _tickBlizzActiveCache[spellID]
+                    -- Fallback: check if the buff-viewer child's cooldown is running
+                    -- (covers summon spells with no aura like Dreadstalkers)
+                    if not isActive then
+                        local blzBufCh = _tickBlizzBuffChildCache[resolvedID] or _tickBlizzBuffChildCache[spellID]
+                        if IsBufChildCooldownActive(blzBufCh) then isActive = true end
+                    end
                     if not isActive then
                         ourIcon:Hide()
                         visibleCount = visibleCount - 1
@@ -3393,6 +3424,11 @@ UpdateCDMBarIcons = function(barKey)
             if barData.hideBuffsWhenInactive and isBuffBar and not EllesmereUI._unlockActive
                and not (EllesmereUI._mainFrame and EllesmereUI._mainFrame:IsShown()) then
                 local isActive = _tickBlizzActiveCache[resolvedSid]
+                -- Fallback: check if the buff-viewer child's cooldown is running
+                if not isActive then
+                    local blzBufCh = _tickBlizzBuffChildCache[resolvedSid]
+                    if IsBufChildCooldownActive(blzBufCh) then isActive = true end
+                end
                 if not isActive then
                     ourIcon:Hide()
                 end
@@ -3790,10 +3826,16 @@ local function UpdateTrackedBarIcons(barKey)
 
                     -- Buff bar fallback for spells with no aura (e.g. summons):
                     -- when the Blizzard CDM marks the spell as active, the effect is active.
+                    -- Also check if the buff-viewer child is visible (covers summon
+                    -- spells like Dreadstalkers that have no aura and no wasSetFromAura).
                     -- Copy the child's cooldown state to show the effect duration.
                     if not hasRuntimeOverride and not auraHandled then
                         if isBuffBarForOvr then
                             local blzFbActive = _tickBlizzActiveCache[resolvedID] or _tickBlizzActiveCache[spellID]
+                            if not blzFbActive then
+                                local blzBufCh = _tickBlizzBuffChildCache[resolvedID] or _tickBlizzBuffChildCache[spellID]
+                                if IsBufChildCooldownActive(blzBufCh) then blzFbActive = true end
+                            end
                             if blzFbActive then
                                 local blzFb = _tickBlizzAllChildCache[resolvedID] or _tickBlizzAllChildCache[spellID]
                                 auraHandled = true
@@ -3804,10 +3846,10 @@ local function UpdateTrackedBarIcons(barKey)
                                     local blzCD = blzFb.Cooldown
                                     if blzCD then
                                         ourIcon._cooldown:Clear()
-                                        if blzFb._ecmeDurObj then
-                                            pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, blzFb._ecmeDurObj, true)
-                                        elseif blzFb._ecmeRawStart and blzFb._ecmeRawDur then
-                                            pcall(ourIcon._cooldown.SetCooldown, ourIcon._cooldown, blzFb._ecmeRawStart, blzFb._ecmeRawDur)
+                                        if _ecmeDurObjCache[blzFb] then
+                                            pcall(ourIcon._cooldown.SetCooldownFromDurationObject, ourIcon._cooldown, _ecmeDurObjCache[blzFb], true)
+                                        elseif _ecmeRawStartCache[blzFb] and _ecmeRawDurCache[blzFb] then
+                                            pcall(ourIcon._cooldown.SetCooldown, ourIcon._cooldown, _ecmeRawStartCache[blzFb], _ecmeRawDurCache[blzFb])
                                         end
                                         ourIcon._cooldown:SetReverse(false)
                                     end
@@ -3843,6 +3885,11 @@ local function UpdateTrackedBarIcons(barKey)
                 if barData.hideBuffsWhenInactive and isBuffBarForOvr and not EllesmereUI._unlockActive
                    and not (EllesmereUI._mainFrame and EllesmereUI._mainFrame:IsShown()) then
                     local isActive = _tickBlizzActiveCache[resolvedID] or _tickBlizzActiveCache[spellID]
+                    -- Fallback: check if the buff-viewer child's cooldown is running
+                    if not isActive then
+                        local blzBufCh = _tickBlizzBuffChildCache[resolvedID] or _tickBlizzBuffChildCache[spellID]
+                        if IsBufChildCooldownActive(blzBufCh) then isActive = true end
+                    end
                     if not isActive then
                         ourIcon:Hide()
                     else
@@ -3895,10 +3942,12 @@ local function UpdateAllCDMBars(dt)
     wipe(_tickBlizzOverrideCache)
     wipe(_tickBlizzChildCache)
     wipe(_tickBlizzAllChildCache)
+    wipe(_tickBlizzBuffChildCache)
     do
         local viewers = { "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
         for _, vName in ipairs(viewers) do
             local vf = _G[vName]
+            local isBuffViewer = (vName == "BuffIconCooldownViewer" or vName == "BuffBarCooldownViewer")
             if vf then
                 for ci = 1, vf:GetNumChildren() do
                     local ch = select(ci, vf:GetChildren())
@@ -3918,6 +3967,11 @@ local function UpdateAllCDMBars(dt)
                                 local resolvedSid = info.overrideSpellID or info.spellID
                                 if resolvedSid and resolvedSid > 0 then
                                     _tickBlizzAllChildCache[resolvedSid] = ch
+                                    -- Buff-viewer-only child cache (for IsShown fallback on
+                                    -- summon-type spells that have no aura)
+                                    if isBuffViewer then
+                                        _tickBlizzBuffChildCache[resolvedSid] = ch
+                                    end
                                 end
                                 -- Active cache: resolved spellID -> true when aura-active
                                 if ch.wasSetFromAura == true or ch.auraInstanceID ~= nil then
@@ -3928,17 +3982,30 @@ local function UpdateAllCDMBars(dt)
                                 end
                                 -- Hook the child's Cooldown widget to capture DurationObjects
                                 -- when Blizzard sets them. Avoids secret-value arithmetic.
+                                -- Store captured values in our own tables, not on the child frame,
+                                -- to avoid taint from writing to Blizzard-owned frame fields.
                                 if ch.Cooldown and not ch._ecmeHooked then
                                     ch._ecmeHooked = true
                                     if ch.Cooldown.SetCooldownFromDurationObject then
                                         hooksecurefunc(ch.Cooldown, "SetCooldownFromDurationObject", function(_, durObj)
-                                            ch._ecmeDurObj = durObj
+                                            _ecmeDurObjCache[ch] = durObj
+                                            _ecmeChildHasDurObj[ch] = true
                                         end)
                                     end
                                     hooksecurefunc(ch.Cooldown, "SetCooldown", function(_, start, dur)
-                                        ch._ecmeRawStart = start
-                                        ch._ecmeRawDur = dur
+                                        _ecmeRawStartCache[ch] = start
+                                        _ecmeRawDurCache[ch] = dur
                                     end)
+                                    -- Clear hook: wipe our cached state when Blizzard clears the cooldown.
+                                    -- This ensures IsBufChildCooldownActive returns false after expiry.
+                                    if ch.Cooldown.Clear then
+                                        hooksecurefunc(ch.Cooldown, "Clear", function()
+                                            _ecmeDurObjCache[ch] = nil
+                                            _ecmeChildHasDurObj[ch] = nil
+                                            _ecmeRawStartCache[ch] = nil
+                                            _ecmeRawDurCache[ch] = nil
+                                        end)
+                                    end
                                 end
                             end
                         end

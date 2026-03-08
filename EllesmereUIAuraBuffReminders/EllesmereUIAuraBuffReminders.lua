@@ -29,36 +29,13 @@ local function GetSpecID()
 end
 
 -------------------------------------------------------------------------------
---  Font paths (shared with options for font dropdown)
+--  Font resolution (uses global font system)
 -------------------------------------------------------------------------------
-local FONT_DIR = "Interface\\AddOns\\EllesmereUI\\media\\fonts\\"
-local fontPaths = {
-    ["Expressway"]          = FONT_DIR .. "Expressway.TTF",
-    ["Avant Garde"]         = FONT_DIR .. "Avant Garde.ttf",
-    ["Arial Bold"]          = FONT_DIR .. "Arial Bold.TTF",
-    ["Poppins"]             = FONT_DIR .. "Poppins.ttf",
-    ["Fira Sans Medium"]    = FONT_DIR .. "FiraSans Medium.ttf",
-    ["Arial Narrow"]        = FONT_DIR .. "Arial Narrow.ttf",
-    ["Changa"]              = FONT_DIR .. "Changa.ttf",
-    ["Cinzel Decorative"]   = FONT_DIR .. "Cinzel Decorative.ttf",
-    ["Exo"]                 = FONT_DIR .. "Exo.otf",
-    ["Fira Sans Bold"]      = FONT_DIR .. "FiraSans Bold.ttf",
-    ["Fira Sans Light"]     = FONT_DIR .. "FiraSans Light.ttf",
-    ["Future X Black"]      = FONT_DIR .. "Future X Black.otf",
-    ["Gotham Narrow Ultra"] = FONT_DIR .. "Gotham Narrow Ultra.otf",
-    ["Gotham Narrow"]       = FONT_DIR .. "Gotham Narrow.otf",
-    ["Russo One"]           = FONT_DIR .. "Russo One.ttf",
-    ["Ubuntu"]              = FONT_DIR .. "Ubuntu.ttf",
-    ["Friz Quadrata"]       = "Fonts\\FRIZQT__.TTF",
-    ["Arial"]               = "Fonts\\ARIALN.TTF",
-    ["Morpheus"]            = "Fonts\\MORPHEUS.TTF",
-    ["Skurri"]              = "Fonts\\skurri.ttf",
-}
 local function ResolveFontPath(fontName)
     if EllesmereUI and EllesmereUI.GetFontPath then
         return EllesmereUI.GetFontPath("auraBuff")
     end
-    return fontPaths[fontName or "Expressway"] or fontPaths["Expressway"]
+    return "Interface\\AddOns\\EllesmereUI\\media\\fonts\\Expressway.TTF"
 end
 local function GetABROutline()
     return (EllesmereUI and EllesmereUI.GetFontOutlineFlag and EllesmereUI.GetFontOutlineFlag()) or ""
@@ -2141,7 +2118,6 @@ mainFrame:SetScript("OnEvent", function(_, e, arg1, arg2)
         _G._EABR_WEAPON_ENCHANT_ITEMS = WEAPON_ENCHANT_ITEMS
         _G._EABR_Tex = Tex
         _G._EABR_ICON_SIZE = ICON_SIZE
-        _G._EABR_fontPaths = fontPaths
         _G._EABR_FLASK_ITEMS = FLASK_ITEMS
         _G._EABR_FOOD_ITEMS = FOOD_ITEMS
         _G._EABR_WEAPON_ENCHANT_CHOICES = WEAPON_ENCHANT_CHOICES

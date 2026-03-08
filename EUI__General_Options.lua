@@ -668,11 +668,12 @@ initFrame:SetScript("OnEvent", function(self)
                 EllesmereUI:RefreshPage()
               end },
             { type="dropdown", text="Window Scale",
-              values={ ["Small (90%)"]="Small (90%)", ["Normal (100%)"]="Normal (100%)", ["Large (110%)"]="Large (110%)", ["Huge (125%)"]="Huge (125%)", ["Massive (150%)"]="Massive (150%)" },
-              order={ "Small (90%)", "Normal (100%)", "Large (110%)", "Huge (125%)", "Massive (150%)" },
+              values={ ["Tiny (75%)"]="Tiny (75%)", ["Small (90%)"]="Small (90%)", ["Normal (100%)"]="Normal (100%)", ["Large (110%)"]="Large (110%)", ["Huge (125%)"]="Huge (125%)", ["Massive (150%)"]="Massive (150%)" },
+              order={ "Tiny (75%)", "Small (90%)", "Normal (100%)", "Large (110%)", "Huge (125%)", "Massive (150%)" },
               getValue=function()
                 local raw = (EllesmereUIDB and EllesmereUIDB.panelScale) or 1.0
                 local pct = floor(raw * 100 + 0.5)
+                if pct == 75  then return "Tiny (75%)"    end
                 if pct == 90  then return "Small (90%)"   end
                 if pct == 110 then return "Large (110%)"  end
                 if pct == 125 then return "Huge (125%)"   end
@@ -681,7 +682,8 @@ initFrame:SetScript("OnEvent", function(self)
               end,
               setValue=function(v)
                 local scale = 1.0
-                if v == "Small (90%)"    then scale = 0.90
+                if v == "Tiny (75%)"     then scale = 0.75
+                elseif v == "Small (90%)"    then scale = 0.90
                 elseif v == "Large (110%)"  then scale = 1.10
                 elseif v == "Huge (125%)"   then scale = 1.25
                 elseif v == "Massive (150%)" then scale = 1.50 end
@@ -723,7 +725,7 @@ initFrame:SetScript("OnEvent", function(self)
 
         _, h = W:DualRow(parent, y,
             { type="slider", text="UI Scale",
-              min=0.40, max=1.15, step=0.01,
+              min=0.40, max=1.00, step=0.01,
               tooltip="Sets the scale of the entire game UI. Lower values make everything smaller, higher values make everything larger.",
               getValue=function()
                 if EllesmereUI._uiScaleDragVal then
@@ -1462,7 +1464,7 @@ initFrame:SetScript("OnEvent", function(self)
         local fctFontValues = {
             ["default"]                                = { text = "Blizzard Default", font = "Fonts\\FRIZQT__.TTF" },
             [FCT_FONT_DIR .. "Expressway.TTF"]         = { text = "Expressway",           font = FCT_FONT_DIR .. "Expressway.TTF" },
-            [FCT_FONT_DIR .. "Avant Garde.ttf"]        = { text = "Avant Garde",          font = FCT_FONT_DIR .. "Avant Garde.ttf" },
+            [FCT_FONT_DIR .. "Avant Garde.ttf"]        = { text = "Avant Garde (Naowh)",  font = FCT_FONT_DIR .. "Avant Garde.ttf" },
             [FCT_FONT_DIR .. "Arial Bold.TTF"]         = { text = "Arial Bold",           font = FCT_FONT_DIR .. "Arial Bold.TTF" },
             [FCT_FONT_DIR .. "Poppins.ttf"]            = { text = "Poppins",              font = FCT_FONT_DIR .. "Poppins.ttf" },
             [FCT_FONT_DIR .. "FiraSans Medium.ttf"]    = { text = "Fira Sans Medium",     font = FCT_FONT_DIR .. "FiraSans Medium.ttf" },
@@ -1508,6 +1510,9 @@ initFrame:SetScript("OnEvent", function(self)
             "Fonts\\MORPHEUS.TTF",
             "Fonts\\skurri.ttf",
         }
+        if EllesmereUI.AppendSharedMediaFonts then
+            EllesmereUI.AppendSharedMediaFonts(fctFontValues, fctFontOrder)
+        end
 
         local showDmgRow
         showDmgRow, h = W:DualRow(parent, y,
@@ -2045,7 +2050,8 @@ initFrame:SetScript("OnEvent", function(self)
             else
                 local path = EllesmereUI.FONT_BLIZZARD[name]
                     or (FONT_DIR_GLOBAL .. (EllesmereUI.FONT_FILES[name] or "Expressway.TTF"))
-                fontDropValues[name] = { text = name, font = path }
+                local displayName = (EllesmereUI.FONT_DISPLAY_NAMES and EllesmereUI.FONT_DISPLAY_NAMES[name]) or name
+                fontDropValues[name] = { text = displayName, font = path }
                 fontDropOrder[#fontDropOrder + 1] = name
             end
         end
@@ -3219,7 +3225,7 @@ initFrame:SetScript("OnEvent", function(self)
     EllesmereUI:RegisterModule(GLOBAL_KEY, {
         title       = "Global Settings",
         description = "General options for all EllesmereUI addons.",
-        pages       = { PAGE_GENERAL, PAGE_CORE, PAGE_COLORS, PAGE_PROFILES },
+        pages       = { PAGE_GENERAL, PAGE_CORE, PAGE_COLORS, PAGE_PROFILES, "Disable Addons" },
         disabledPages = disabledList,
         disabledPageTooltips = disabledTips,
         buildPage   = function(pageName, parent, yOffset)

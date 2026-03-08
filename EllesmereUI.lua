@@ -1127,6 +1127,10 @@ EllesmereUI.FONT_ORDER = {
     "Gotham Narrow Ultra", "Gotham Narrow", "Russo One", "Ubuntu", "Homespun",
     "Friz Quadrata", "Arial", "Morpheus", "Skurri",
 }
+-- Display name overrides for the font dropdown (key = FONT_ORDER name)
+EllesmereUI.FONT_DISPLAY_NAMES = {
+    ["Avant Garde"] = "Avant Garde (Naowh)",
+}
 
 -- Get the fonts DB table (lazy-init)
 function EllesmereUI.GetFontsDB()
@@ -4592,6 +4596,17 @@ function EllesmereUI:SelectPage(pageName)
         return
     end
 
+    -- "Disable Addons" is a fake nav item — opens the Blizzard addon list.
+    if pageName == "Disable Addons" then
+        C_Timer.After(0, function()
+            if not AddonList then
+                C_AddOns.LoadAddOn("Blizzard_AddonList")
+            end
+            if AddonList then AddonList:Show() end
+        end)
+        return
+    end
+
     -- Save current page's refresh list before switching
     if activePage then
         local oldKey = activeModule .. "::" .. activePage
@@ -5101,7 +5116,7 @@ end
 -------------------------------------------------------------------------------
 --  Slash commands
 -------------------------------------------------------------------------------
-EllesmereUI.VERSION = "3.7.4"
+EllesmereUI.VERSION = "3.7.5"
 
 -- Register this addon's version into a shared global table (taint-free at load time)
 if not _G._EUI_AddonVersions then _G._EUI_AddonVersions = {} end

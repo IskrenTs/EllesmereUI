@@ -1540,6 +1540,10 @@ local function UpdateHealthBar()
             txt = AbbreviateLargeNumbers(cur)
         elseif fmt == "perhp" then
             txt = format("%d", pctRaw) .. "%"
+        elseif fmt == "perhpnosign" then
+            txt = format("%d", pctRaw)
+        elseif fmt == "perhpnum" then
+            txt = format("%d", pctRaw) .. "% | " .. AbbreviateLargeNumbers(cur)
         else
             txt = format("%d", pctRaw) .. "%"
         end

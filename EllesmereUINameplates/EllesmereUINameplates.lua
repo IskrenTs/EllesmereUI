@@ -465,7 +465,8 @@ end
 -- flat pixel assumptions based on typical worst-case rendered widths.
 local HEALTH_TEXT_PADDING = 10  -- safety margin in px
 local healthTextWidths = {
-    healthPercent = 38,
+    healthPercent       = 38,
+    healthPercentNoSign = 38,
     healthNumber  = 38,
     healthPctNum  = 75,
     healthNumPct  = 75,
@@ -3129,15 +3130,19 @@ function NameplateFrame:UpdateHealthValues()
     end
 
     -- Compute text strings
-    local pctText, numText
+    local pctText, pctNoSignText, numText
     if UnitIsDeadOrGhost(unit) then
         pctText = "0%"
+        pctNoSignText = "0"
         numText = "0"
     elseif UnitHealthPercent then
-        pctText = string.format("%d%%", UnitHealthPercent(unit, true, CurveConstants.ScaleTo100))
+        local pctVal = UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)
+        pctText = string.format("%d%%", pctVal)
+        pctNoSignText = string.format("%d", pctVal)
         numText = AbbreviateNumbers(UnitHealth(unit))
     else
         pctText = ""
+        pctNoSignText = ""
         numText = ""
     end
 
@@ -3158,10 +3163,10 @@ function NameplateFrame:UpdateHealthValues()
         local txOff, tyOff = GetTextSlotOffsets(slot.key)
         local slotFontSz = GetTextSlotSize(slot.key)
         local sr, sg, sb = GetTextSlotColor(slot.key)
-        if element == "healthPercent" then
+        if element == "healthPercent" or element == "healthPercentNoSign" then
             self.hpText:SetParent(self.healthTextFrame)
             SetFSFont(self.hpText, slotFontSz, GetNPOutline())
-            self.hpText:SetText(pctText)
+            self.hpText:SetText(element == "healthPercentNoSign" and pctNoSignText or pctText)
             self.hpText:ClearAllPoints()
             if slot.anchor == "CENTER" then
                 self.hpText:SetPoint("CENTER", self.health, "CENTER", txOff, tyOff)
@@ -3202,7 +3207,7 @@ function NameplateFrame:UpdateHealthValues()
 
     -- Process top slot for health elements
     local topElement = GetTextSlot("textSlotTop")
-    if topElement == "healthPercent" or topElement == "healthNumber"
+    if topElement == "healthPercent" or topElement == "healthPercentNoSign" or topElement == "healthNumber"
        or topElement == "healthPctNum" or topElement == "healthNumPct" then
         local nameYOff = GetNameYOffset()
         local cpPush = GetClassPowerTopPush(self)
@@ -3217,6 +3222,8 @@ function NameplateFrame:UpdateHealthValues()
             fs = self.hpText
             if topElement == "healthPercent" then
                 fs:SetText(pctText)
+            elseif topElement == "healthPercentNoSign" then
+                fs:SetText(pctNoSignText)
             else
                 fs:SetText(FormatCombinedHealth(topElement, pctText, numText))
             end

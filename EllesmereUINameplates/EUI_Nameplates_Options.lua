@@ -118,61 +118,6 @@ initFrame:SetScript("OnEvent", function(self)
     end
 
     ---------------------------------------------------------------------------
-    --  Font dropdown values
-    ---------------------------------------------------------------------------
-    local FONT_DIR = "Interface\\AddOns\\EllesmereUI\\media\\fonts\\"
-    local fontValues = {
-        [FONT_DIR .. "Expressway.TTF"]           = { text = "Expressway",           font = FONT_DIR .. "Expressway.TTF" },
-        [FONT_DIR .. "Avant Garde.ttf"]          = { text = "Avant Garde",          font = FONT_DIR .. "Avant Garde.ttf" },
-        [FONT_DIR .. "Arial Bold.TTF"]           = { text = "Arial Bold",           font = FONT_DIR .. "Arial Bold.TTF" },
-        [FONT_DIR .. "Poppins.ttf"]              = { text = "Poppins",              font = FONT_DIR .. "Poppins.ttf" },
-        [FONT_DIR .. "FiraSans Medium.ttf"]      = { text = "Fira Sans Medium",     font = FONT_DIR .. "FiraSans Medium.ttf" },
-        [FONT_DIR .. "Arial Narrow.ttf"]         = { text = "Arial Narrow",         font = FONT_DIR .. "Arial Narrow.ttf" },
-        [FONT_DIR .. "Changa.ttf"]               = { text = "Changa",               font = FONT_DIR .. "Changa.ttf" },
-        [FONT_DIR .. "Cinzel Decorative.ttf"]    = { text = "Cinzel Decorative",    font = FONT_DIR .. "Cinzel Decorative.ttf" },
-        [FONT_DIR .. "Exo.otf"]                  = { text = "Exo",                  font = FONT_DIR .. "Exo.otf" },
-        [FONT_DIR .. "FiraSans Bold.ttf"]        = { text = "Fira Sans Bold",       font = FONT_DIR .. "FiraSans Bold.ttf" },
-        [FONT_DIR .. "FiraSans Light.ttf"]       = { text = "Fira Sans Light",      font = FONT_DIR .. "FiraSans Light.ttf" },
-        [FONT_DIR .. "Future X Black.otf"]       = { text = "Future X Black",       font = FONT_DIR .. "Future X Black.otf" },
-        [FONT_DIR .. "Gotham Narrow Ultra.otf"]  = { text = "Gotham Narrow Ultra",  font = FONT_DIR .. "Gotham Narrow Ultra.otf" },
-        [FONT_DIR .. "Gotham Narrow.otf"]        = { text = "Gotham Narrow",        font = FONT_DIR .. "Gotham Narrow.otf" },
-        [FONT_DIR .. "Russo One.ttf"]            = { text = "Russo One",            font = FONT_DIR .. "Russo One.ttf" },
-        [FONT_DIR .. "Ubuntu.ttf"]               = { text = "Ubuntu",               font = FONT_DIR .. "Ubuntu.ttf" },
-        [FONT_DIR .. "Homespun.ttf"]             = { text = "Homespun",             font = FONT_DIR .. "Homespun.ttf" },
-        ["Fonts\\FRIZQT__.TTF"]                  = { text = "Friz Quadrata",        font = "Fonts\\FRIZQT__.TTF" },
-        ["Fonts\\ARIALN.TTF"]                    = { text = "Arial",                font = "Fonts\\ARIALN.TTF" },
-        ["Fonts\\MORPHEUS.TTF"]                  = { text = "Morpheus",             font = "Fonts\\MORPHEUS.TTF" },
-        ["Fonts\\skurri.ttf"]                    = { text = "Skurri",               font = "Fonts\\skurri.ttf" },
-    }
-    local fontOrder = {
-        FONT_DIR .. "Expressway.TTF",
-        FONT_DIR .. "Avant Garde.ttf",
-        FONT_DIR .. "Arial Bold.TTF",
-        FONT_DIR .. "Poppins.ttf",
-        FONT_DIR .. "FiraSans Medium.ttf",
-        "---",
-        FONT_DIR .. "Arial Narrow.ttf",
-        FONT_DIR .. "Changa.ttf",
-        FONT_DIR .. "Cinzel Decorative.ttf",
-        FONT_DIR .. "Exo.otf",
-        FONT_DIR .. "FiraSans Bold.ttf",
-        FONT_DIR .. "FiraSans Light.ttf",
-        FONT_DIR .. "Future X Black.otf",
-        FONT_DIR .. "Gotham Narrow Ultra.otf",
-        FONT_DIR .. "Gotham Narrow.otf",
-        FONT_DIR .. "Russo One.ttf",
-        FONT_DIR .. "Ubuntu.ttf",
-        FONT_DIR .. "Homespun.ttf",
-        "Fonts\\FRIZQT__.TTF",
-        "Fonts\\ARIALN.TTF",
-        "Fonts\\MORPHEUS.TTF",
-        "Fonts\\skurri.ttf",
-    }
-    if EllesmereUI.AppendSharedMediaFonts then
-        EllesmereUI.AppendSharedMediaFonts(fontValues, fontOrder)
-    end
-
-    ---------------------------------------------------------------------------
     --  Health bar texture dropdown values (built from ns tables)
     ---------------------------------------------------------------------------
     -- Append SharedMedia textures to the runtime ns tables first so both
@@ -785,6 +730,7 @@ initFrame:SetScript("OnEvent", function(self)
             local curHpVal = math.floor(PV_CONST.FAKE_MAX_HP * curHpPct / 100)
             health:SetValue(curHpVal)
             local pctStr = curHpPct .. "%"
+            local pctNoSignStr = tostring(curHpPct)
             local hpNumStr = tostring(curHpVal):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
             -- Text on hpText/hpNumber is set later by the slot-based positioning logic
             cast:SetValue(_previewCastFill or 0.60)
@@ -958,10 +904,10 @@ initFrame:SetScript("OnEvent", function(self)
             -- Helper: position a health-related element in a bar slot
             local function PlaceHealthInBar(element, anchor, point, xOff, yOff, fontSize, cr, cg, cb)
                 yOff = yOff or 0
-                if element == "healthPercent" then
+                if element == "healthPercent" or element == "healthPercentNoSign" then
                     SetPVFont(hpText, fontPath, fontSize, npOutline)
                     hpText:SetParent(healthTextFrame)
-                    hpText:SetText(pctStr)
+                    hpText:SetText(element == "healthPercentNoSign" and pctNoSignStr or pctStr)
                     hpText:SetPoint(point, health, anchor, xOff, yOff)
                     hpText:SetTextColor(cr, cg, cb, 1)
                     hpText:Show()
@@ -993,9 +939,9 @@ initFrame:SetScript("OnEvent", function(self)
             local function PlaceHealthOnTop(element, txOff, tyOff, fontSize, cr, cg, cb)
                 txOff = txOff or 0
                 tyOff = tyOff or 0
-                if element == "healthPercent" then
+                if element == "healthPercent" or element == "healthPercentNoSign" then
                     SetPVFont(hpText, fontPath, fontSize, npOutline)
-                    hpText:SetText(pctStr)
+                    hpText:SetText(element == "healthPercentNoSign" and pctNoSignStr or pctStr)
                     hpText:SetParent(topTextFrame)
                     hpText:SetPoint("BOTTOM", health, "TOP", txOff, 4 + nameYOff + cpPush + tyOff)
                     hpText:SetTextColor(cr, cg, cb, 1)
@@ -3115,11 +3061,11 @@ initFrame:SetScript("OnEvent", function(self)
                 EllesmereUI:RefreshPage()
               end,
               order={ "ellesmere", "simple", "none" } },
-            { type="dropdown", text="Font", values=fontValues, order=fontOrder,
-              getValue=function() return DBVal("font") end,
+            { type="dropdown", text="Bar Texture", values=hbtValues, order=hbtOrder,
+              getValue=function() return DBVal("healthBarTexture") or "none" end,
               setValue=function(v)
-                DB().font = v
-                RefreshAllFonts()
+                DB().healthBarTexture = v
+                RefreshAllTextures()
                 UpdatePreview()
               end });  y = y - h
 
@@ -3160,17 +3106,6 @@ initFrame:SetScript("OnEvent", function(self)
                 if ns.ApplyHealthBarTexture then ns.ApplyHealthBarTexture(plate) end
             end
         end
-
-        local barTextureRow
-        barTextureRow, h = W:DualRow(parent, y,
-            { type="dropdown", text="Bar Texture", values=hbtValues, order=hbtOrder,
-              getValue=function() return DBVal("healthBarTexture") or "none" end,
-              setValue=function(v)
-                DB().healthBarTexture = v
-                RefreshAllTextures()
-                UpdatePreview()
-              end },
-            nil);  y = y - h
 
         _, h = W:Spacer(parent, y, 20);  y = y - h
 
@@ -3794,14 +3729,15 @@ initFrame:SetScript("OnEvent", function(self)
         end
 
         local textElementValues = {
-            enemyName     = "Enemy Name",
-            healthPercent = "Health Percent",
-            healthNumber  = "Health Number",
-            healthPctNum  = "Health % | #",
-            healthNumPct  = "Health # | %",
-            none          = "None",
+            enemyName            = "Enemy Name",
+            healthPercent        = "Health %",
+            healthPercentNoSign  = "Health % (No Sign)",
+            healthNumber         = "Health #",
+            healthPctNum         = "Health % | #",
+            healthNumPct         = "Health # | %",
+            none                 = "None",
         }
-        local textElementOrder = { "none", "---", "enemyName", "healthPercent", "healthNumber", "healthPctNum", "healthNumPct" }
+        local textElementOrder = { "none", "---", "enemyName", "healthPercent", "healthPercentNoSign", "healthNumber", "healthPctNum", "healthNumPct" }
 
         local function TextSlotSetValue(slotKey, v)
             SetTextElementAtSlot(slotKey, v)
@@ -4624,7 +4560,7 @@ initFrame:SetScript("OnEvent", function(self)
             classIcon    = function() return ResolveCoreMapping("classification") end,
             enemyName    = function() return ResolveTextMapping("enemyName") end,
             healthText   = function()
-                local slot = FindTextSlotForElement("healthPercent") or FindTextSlotForElement("healthNumber") or FindTextSlotForElement("healthPctNum") or FindTextSlotForElement("healthNumPct")
+                local slot = FindTextSlotForElement("healthPercent") or FindTextSlotForElement("healthPercentNoSign") or FindTextSlotForElement("healthNumber") or FindTextSlotForElement("healthPctNum") or FindTextSlotForElement("healthNumPct")
                 if not slot then return { section = coreTextHeader, target = textRow1 } end
                 local info = textSlotToRow[slot]
                 if not info then return { section = coreTextHeader, target = textRow1 } end
@@ -5173,9 +5109,9 @@ initFrame:SetScript("OnEvent", function(self)
                 for _, slot in ipairs(barSlots) do
                     local element = DBVal(slot.key) or defaults[slot.key]
                     local sc = (DB() and DB()[slot.key .. "Color"]) or defaults[slot.key .. "Color"]
-                    if element == "healthPercent" then
+                    if element == "healthPercent" or element == "healthPercentNoSign" then
                         pctFS:SetTextColor(sc.r, sc.g, sc.b, 1)
-                        pctFS:SetText(healthPct .. "%")
+                        pctFS:SetText(element == "healthPercentNoSign" and tostring(healthPct) or (healthPct .. "%"))
                         pctFS:SetPoint(slot.anchor, health, slot.anchor, slot.xOff, 0)
                         pctFS:Show()
                     elseif element == "healthNumber" then

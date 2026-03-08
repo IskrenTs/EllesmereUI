@@ -24,7 +24,17 @@ do
     local pendingScale = nil   -- scale to apply once the world is ready
 
     local function ApplyScaleSafe(scale)
-        UIParent:SetScale(scale)
+        if InCombatLockdown() then
+            -- Defer until combat ends — UIParent:SetScale is protected in combat
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("PLAYER_REGEN_ENABLED")
+            f:SetScript("OnEvent", function(self)
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                UIParent:SetScale(scale)
+            end)
+        else
+            UIParent:SetScale(scale)
+        end
     end
 
     local scaleFrame = CreateFrame("Frame")
@@ -79,6 +89,7 @@ do
             if scale then
                 ApplyScaleSafe(scale)
                 C_Timer.After(1, function()
+                    if InCombatLockdown() then return end
                     if EllesmereUIDB and EllesmereUIDB.ppUIScale then
                         ApplyScaleSafe(EllesmereUIDB.ppUIScale)
                     end

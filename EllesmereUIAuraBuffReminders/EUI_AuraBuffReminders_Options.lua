@@ -273,7 +273,7 @@ initFrame:SetScript("OnEvent", function(self)
             btn:Show()
         end
 
-        -- Recalculate total preview height and compensate scroll offset
+        -- Recalculate total preview height: hardcoded 80px
         do
             local textYOff2 = d.textYOffset or -2
             local textSz2 = d.textSize or 11
@@ -281,8 +281,10 @@ initFrame:SetScript("OnEvent", function(self)
             local CONTAINER_H = sz + textOverhang2
             if _previewContainer then
                 _previewContainer:SetHeight(CONTAINER_H)
+                _previewContainer:ClearAllPoints()
+                _previewContainer:SetPoint("CENTER", _previewContainer:GetParent(), "CENTER", 0, 0)
             end
-            local TOTAL_H = 15 + CONTAINER_H + 15
+            local TOTAL_H = 80
             _eabrHeaderBaseH = TOTAL_H
             local hintH = (_previewHintFS and _previewHintFS:IsShown()) and 35 or 0
             EllesmereUI:UpdateContentHeaderHeight(TOTAL_H + hintH)
@@ -453,13 +455,13 @@ initFrame:SetScript("OnEvent", function(self)
         local tc = d and d.textColor or {r=1, g=1, b=1}
         local opacity = d and d.opacity or 1.0
 
-        -- Container for icons
+        -- Container for icons (centered within hardcoded 80px header)
         local textYOff = d and d.textYOffset or -2
         local textSz = d and d.textSize or 11
         local textOverhang = showText and (math.abs(textYOff) + textSz) or 0
         local container = CreateFrame("Frame", nil, hdr)
         container:SetSize(hdrW, sz + textOverhang)
-        container:SetPoint("TOP", hdr, "TOP", 0, -15)
+        container:SetPoint("CENTER", hdr, "CENTER", 0, 0)
         _previewContainer = container
 
         -- Create icon frames
@@ -523,11 +525,7 @@ initFrame:SetScript("OnEvent", function(self)
             _previewHintFS = nil
         end
         local hintShown = not IsPreviewHintDismissed()
-        local textYOff = d and d.textYOffset or -2
-        local textSize = d and d.textSize or 11
-        local textOverhang = showText and (math.abs(textYOff) + textSize) or 0
-        local CONTAINER_H = sz + textOverhang
-        local TOTAL_H = 15 + CONTAINER_H + 15
+        local TOTAL_H = 80
         _eabrHeaderBaseH = TOTAL_H
 
         if hintShown then

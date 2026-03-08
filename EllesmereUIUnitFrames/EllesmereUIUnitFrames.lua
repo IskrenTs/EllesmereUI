@@ -1,4 +1,4 @@
-local addonName, ns = ...
+﻿local addonName, ns = ...
 
 local oUF = ns.oUF or oUF
 local PP = EllesmereUI.PP
@@ -35,7 +35,7 @@ local defaults = {
             powerPercentSize = 9,
             powerPercentX = 0,
             powerPercentY = 0,
-            powerPercentPowerColor = false,
+            powerPercentPowerColor = true,
             healthDisplay = "both",
             showBuffs = false,
             maxBuffs = 4,
@@ -163,7 +163,7 @@ local defaults = {
             powerPercentSize = 9,
             powerPercentX = 0,
             powerPercentY = 0,
-            powerPercentPowerColor = false,
+            powerPercentPowerColor = true,
             castbarHeight = 14,
             showCastbar = true,
             showCastIcon = true,
@@ -263,7 +263,7 @@ local defaults = {
             powerPercentSize = 9,
             powerPercentX = 0,
             powerPercentY = 0,
-            powerPercentPowerColor = false,
+            powerPercentPowerColor = true,
             castbarHeight = 14,
             maxBuffs = 20,
             maxDebuffs = 20,
@@ -329,7 +329,7 @@ local defaults = {
             powerPercentSize = 9,
             powerPercentX = 0,
             powerPercentY = 0,
-            powerPercentPowerColor = false,
+            powerPercentPowerColor = true,
             castbarHeight = 14,
             showCastbar = true,
             showCastIcon = true,
@@ -428,7 +428,7 @@ local defaults = {
             powerPercentSize = 9,
             powerPercentX = 0,
             powerPercentY = 0,
-            powerPercentPowerColor = false,
+            powerPercentPowerColor = true,
             castbarHeight = 14,
             healthDisplay = "perhp",
             showPortrait = false,
@@ -481,36 +481,12 @@ local MANA_COLOR = { r = 0.204, g = 0.349, b = 0.851 }
 
 local SOLID_BACKDROP = { bgFile = "Interface\\Buttons\\WHITE8X8" }
 
-local UF_FONT_DIR = "Interface\\AddOns\\EllesmereUI\\media\\fonts\\"
-local fontPaths = {
-    ["Expressway"]          = UF_FONT_DIR .. "Expressway.TTF",
-    ["Avant Garde"]         = UF_FONT_DIR .. "Avant Garde.ttf",
-    ["Arial Bold"]          = UF_FONT_DIR .. "Arial Bold.TTF",
-    ["Poppins"]             = UF_FONT_DIR .. "Poppins.ttf",
-    ["Fira Sans Medium"]    = UF_FONT_DIR .. "FiraSans Medium.ttf",
-    ["Arial Narrow"]        = UF_FONT_DIR .. "Arial Narrow.ttf",
-    ["Changa"]              = UF_FONT_DIR .. "Changa.ttf",
-    ["Cinzel Decorative"]   = UF_FONT_DIR .. "Cinzel Decorative.ttf",
-    ["Exo"]                 = UF_FONT_DIR .. "Exo.otf",
-    ["Fira Sans Bold"]      = UF_FONT_DIR .. "FiraSans Bold.ttf",
-    ["Fira Sans Light"]     = UF_FONT_DIR .. "FiraSans Light.ttf",
-    ["Future X Black"]      = UF_FONT_DIR .. "Future X Black.otf",
-    ["Gotham Narrow Ultra"] = UF_FONT_DIR .. "Gotham Narrow Ultra.otf",
-    ["Gotham Narrow"]       = UF_FONT_DIR .. "Gotham Narrow.otf",
-    ["Russo One"]           = UF_FONT_DIR .. "Russo One.ttf",
-    ["Ubuntu"]              = UF_FONT_DIR .. "Ubuntu.ttf",
-    ["Homespun"]            = UF_FONT_DIR .. "Homespun.ttf",
-    ["Friz Quadrata"]       = "Fonts\\FRIZQT__.TTF",
-    ["Arial"]               = "Fonts\\ARIALN.TTF",
-    ["Morpheus"]            = "Fonts\\MORPHEUS.TTF",
-    ["Skurri"]              = "Fonts\\skurri.ttf",
-}
-
 -- Locale system font override: for CJK/Cyrillic clients, bypass all custom
 -- fonts and use the WoW built-in font that supports the locale's glyphs.
 local LOCALE_FONT_OVERRIDE = EllesmereUI and EllesmereUI.LOCALE_FONT_FALLBACK
 
-local cachedFontPath = LOCALE_FONT_OVERRIDE or fontPaths["Expressway"]
+local cachedFontPath = LOCALE_FONT_OVERRIDE or (EllesmereUI and EllesmereUI.GetFontPath and EllesmereUI.GetFontPath("unitFrames"))
+    or "Interface\\AddOns\\EllesmereUI\\media\\fonts\\Expressway.TTF"
 local cachedFontPaths = {}  -- per-unit font cache
 local function ResolveFontPath(unitKey)
     -- Locale override takes absolute priority — no custom font can render CJK/Cyrillic
@@ -521,33 +497,12 @@ local function ResolveFontPath(unitKey)
         end
         return
     end
-    -- Global font system overrides per-unit fonts
-    if EllesmereUI and EllesmereUI.GetFontPath then
-        local gPath = EllesmereUI.GetFontPath("unitFrames")
-        cachedFontPath = gPath
-        for _, uKey in ipairs({"player", "target", "focus", "boss", "pet", "totPet"}) do
-            cachedFontPaths[uKey] = gPath
-        end
-        return
-    end
-    if unitKey then
-        local s = db and db.profile and db.profile[unitKey]
-        local fontName = s and s.selectedFont or (db and db.profile and db.profile.selectedFont) or "Expressway"
-        cachedFontPaths[unitKey] = fontPaths[fontName] or fontPaths["Expressway"]
-        return
-    end
-    -- Resolve all units + global fallback
-    if db and db.profile then
-        for _, uKey in ipairs({"player", "target", "focus", "boss", "pet", "totPet"}) do
-            local s = db.profile[uKey]
-            local fontName = s and s.selectedFont or db.profile.selectedFont or "Expressway"
-            cachedFontPaths[uKey] = fontPaths[fontName] or fontPaths["Expressway"]
-        end
-        -- Global fallback (used when unit context is unknown)
-        local gFont = db.profile.player and db.profile.player.selectedFont or db.profile.selectedFont or "Expressway"
-        cachedFontPath = fontPaths[gFont] or fontPaths["Expressway"]
-    else
-        cachedFontPath = fontPaths["Expressway"]
+    -- Global font system
+    local gPath = EllesmereUI and EllesmereUI.GetFontPath and EllesmereUI.GetFontPath("unitFrames")
+        or "Interface\\AddOns\\EllesmereUI\\media\\fonts\\Expressway.TTF"
+    cachedFontPath = gPath
+    for _, uKey in ipairs({"player", "target", "focus", "boss", "pet", "totPet"}) do
+        cachedFontPaths[uKey] = gPath
     end
 end
 
@@ -662,27 +617,39 @@ end
 -------------------------------------------------------------------------------
 --  Health Bar Opacity â€” controls the overall alpha of the health bar fill
 -------------------------------------------------------------------------------
-local function ApplyHealthBarOpacity(health, unitKey)
+local function ApplyHealthBarAlpha(health, unitKey)
     if not health then return end
     local s = unitKey and db.profile[unitKey]
-    local alpha = (s and s.healthBarOpacity) or db.profile.healthBarOpacity or 0.9
-    -- Apply to the fill texture and background only (not the whole frame, which would affect text)
+    local fillA = 0.9
+    local bgA   = 0.75
+    if s then
+        local cf = s.customFillColor
+        if cf and cf.a then fillA = cf.a end
+        local cb = s.customBgColor
+        if cb and cb.a then bgA = cb.a end
+    end
     local fillTex = health:GetStatusBarTexture()
-    if fillTex then fillTex:SetAlpha(alpha) end
-    if health.bg then health.bg:SetAlpha(alpha) end
+    if fillTex then fillTex:SetAlpha(fillA) end
+    if health.bg then health.bg:SetAlpha(bgA) end
 end
 
 -------------------------------------------------------------------------------
 --  Power Bar Opacity â€” controls the overall alpha of the power bar
 -------------------------------------------------------------------------------
-local function ApplyPowerBarOpacity(power, unitKey)
+local function ApplyPowerBarAlpha(power, unitKey)
     if not power then return end
     local s = unitKey and db.profile[unitKey]
-    local alpha = (s and s.powerBarOpacity) or db.profile.powerBarOpacity or 1.0
-    -- Apply to the fill texture and background only (not the whole frame, which would affect text)
+    local fillA = 1.0
+    local bgA   = 0.5
+    if s then
+        local cf = s.customPowerFillColor
+        if cf and cf.a then fillA = cf.a end
+        local cb = s.customPowerBgColor
+        if cb and cb.a then bgA = cb.a end
+    end
     local fillTex = power:GetStatusBarTexture()
-    if fillTex then fillTex:SetAlpha(alpha) end
-    if power.bg then power.bg:SetAlpha(alpha) end
+    if fillTex then fillTex:SetAlpha(fillA) end
+    if power.bg then power.bg:SetAlpha(bgA) end
 end
 
 -------------------------------------------------------------------------------
@@ -701,6 +668,8 @@ local function ApplyDarkTheme(health)
         health.colorTapped = false
         health.colorDisconnected = false
         health:SetStatusBarColor(DARK_HEALTH_R, DARK_HEALTH_G, DARK_HEALTH_B, DARK_HEALTH_A)
+        local darkFillTex = health:GetStatusBarTexture()
+        if darkFillTex then darkFillTex:SetAlpha(0.9) end
         if health.bg then
             -- Anchor bg to only cover the empty (missing-health) portion so the
             -- bar opacity fill shows the world behind it, not the bg color.
@@ -708,12 +677,13 @@ local function ApplyDarkTheme(health)
             health.bg:SetPoint("TOPLEFT", health:GetStatusBarTexture(), "TOPRIGHT", 0, 0)
             health.bg:SetPoint("BOTTOMRIGHT", health, "BOTTOMRIGHT", 0, 0)
             health.bg:SetColorTexture(DARK_BG_R, DARK_BG_G, DARK_BG_B, 1)
+            health.bg:SetAlpha(1)
         end
         -- PostUpdateColor: re-apply dark color after oUF tries to class-color,
         -- and re-anchor bg to track the fill edge.
         -- Alpha is NOT re-applied here — SetStatusBarColor(r,g,b) with 3 args
         -- preserves existing texture alpha, so the alpha set by
-        -- ApplyHealthBarOpacity persists through oUF recolors.
+        -- ApplyHealthBarAlpha persists through oUF recolors.
         health.PostUpdateColor = function(self)
             self:SetStatusBarColor(DARK_HEALTH_R, DARK_HEALTH_G, DARK_HEALTH_B, DARK_HEALTH_A)
             if self.bg then
@@ -727,13 +697,39 @@ local function ApplyDarkTheme(health)
         health.colorReaction = true
         health.colorTapped = true
         health.colorDisconnected = true
-        -- Tint bg to 20% of the class/reaction color.
+        -- Check for custom fill/bg colors on this unit
+        local unitKey = health._euiUnitKey
+        local unitSettings = unitKey and db.profile[unitKey]
+        local customFill = unitSettings and unitSettings.customFillColor
+        local customBg   = unitSettings and unitSettings.customBgColor
+        if customFill then
+            -- Custom fill overrides class coloring
+            health.colorClass = false
+            health.colorReaction = false
+            health.colorTapped = false
+            health.colorDisconnected = false
+            health:SetStatusBarColor(customFill.r, customFill.g, customFill.b)
+        end
+        -- Tint bg to 20% of the class/reaction color, or use custom bg color.
         -- Alpha is NOT re-applied — SetStatusBarColor(r,g,b) preserves
         -- existing texture alpha through oUF recolors.
         health.PostUpdateColor = function(self, _, color)
-            if self.bg and color and color.GetRGB then
-                local r, g, b = color:GetRGB()
-                self.bg:SetColorTexture(r * 0.2, g * 0.2, b * 0.2, 0.75)
+            local uKey = self._euiUnitKey
+            local uSettings = uKey and db.profile[uKey]
+            local cFill = uSettings and uSettings.customFillColor
+            local cBg   = uSettings and uSettings.customBgColor
+            if cFill then
+                self:SetStatusBarColor(cFill.r, cFill.g, cFill.b)
+            end
+            if self.bg then
+                if cBg then
+                    self.bg:SetColorTexture(cBg.r, cBg.g, cBg.b, 1)
+                elseif cFill then
+                    self.bg:SetColorTexture(cFill.r * 0.2, cFill.g * 0.2, cFill.b * 0.2, 1)
+                elseif color and color.GetRGB then
+                    local r, g, b = color:GetRGB()
+                    self.bg:SetColorTexture(r * 0.2, g * 0.2, b * 0.2, 1)
+                end
             end
         end
         if health.bg then
@@ -741,7 +737,13 @@ local function ApplyDarkTheme(health)
             health.bg:ClearAllPoints()
             PP.Point(health.bg, "TOPLEFT", health, "TOPLEFT", 0, 0)
             PP.Point(health.bg, "BOTTOMRIGHT", health, "BOTTOMRIGHT", 0, 0)
-            health.bg:SetColorTexture(0, 0, 0, 0.75)
+            if customBg then
+                health.bg:SetColorTexture(customBg.r, customBg.g, customBg.b, 1)
+            elseif customFill then
+                health.bg:SetColorTexture(customFill.r * 0.2, customFill.g * 0.2, customFill.b * 0.2, 1)
+            else
+                health.bg:SetColorTexture(0, 0, 0, 1)
+            end
         end
     end
 end
@@ -766,6 +768,18 @@ do
 
   oUF.Tags.Methods[tagName] = AbbrevHP
   oUF.Tags.Events[tagName] = "UNIT_HEALTH UNIT_MAXHEALTH"
+end
+
+do
+  oUF.Tags.Methods["perhpnosign"] = function(unit)
+    if not unit or not UnitExists(unit) then return "" end
+    if not UnitIsConnected(unit) then return "OFFLINE" end
+    if UnitIsDeadOrGhost(unit) then return "DEAD" end
+    local hp, maxHP = UnitHealth(unit), UnitHealthMax(unit)
+    if maxHP == 0 then return "0" end
+    return tostring(math.floor(hp / maxHP * 100 + 0.5))
+  end
+  oUF.Tags.Events["perhpnosign"] = "UNIT_HEALTH UNIT_MAXHEALTH"
 end
 
 local optionsFrame
@@ -893,12 +907,14 @@ local function GetBossHealthTag()
 end
 
 -- Resolve a leftTextContent / rightTextContent value to an oUF tag string.
--- content: "name", "both", "curhpshort", "perhp", "none"
+-- content: "name", "both", "curhpshort", "perhp", "perhpnosign", "perhpnum", "none"
 local function ContentToTag(content)
     if content == "name" then return "[name]"
     elseif content == "both" then return "[curhpshort] | [perhp]%"
+    elseif content == "perhpnum" then return "[perhp]% | [curhpshort]"
     elseif content == "curhpshort" then return "[curhpshort]"
     elseif content == "perhp" then return "[perhp]%"
+    elseif content == "perhpnosign" then return "[perhpnosign]"
     elseif content == "perpp" then return "[perpp]%"
     elseif content == "curpp" then return "[curpp]"
     elseif content == "curhp_curpp" then return "[curhpshort] | [curpp]"
@@ -911,8 +927,10 @@ end
 local UF_TEXT_PADDING = 10
 local ufTextWidths = {
     both        = 75,  -- "132 K | 86%"
+    perhpnum    = 75,  -- "86% | 132 K"
     curhpshort  = 38,  -- "132 K"
     perhp       = 38,  -- "86%"
+    perhpnosign = 30,  -- "86"
     perpp       = 38,  -- "86%"
     curpp       = 38,  -- "132"
     curhp_curpp = 75,  -- "132 K | 132"
@@ -1699,7 +1717,7 @@ local function CreateHealthBar(frame, unit, height, xOffset, settings, rightInse
     health._euiUnitKey = UnitToSettingsKey(unit)
 
     ApplyHealthBarTexture(health, UnitToSettingsKey(unit))
-    ApplyHealthBarOpacity(health, UnitToSettingsKey(unit))
+    ApplyHealthBarAlpha(health, UnitToSettingsKey(unit))
     ApplyDarkTheme(health)
 
     return health
@@ -1764,11 +1782,31 @@ local function CreatePowerBar(frame, unit, settings)
     local bg = power:CreateTexture(nil, "BACKGROUND")
     PP.Point(bg, "TOPLEFT", power, "TOPLEFT", 0, 0)
     PP.Point(bg, "BOTTOMRIGHT", power, "BOTTOMRIGHT", 0, 0)
-    bg:SetColorTexture(0, 0, 0, 0.5)
+    bg:SetColorTexture(0, 0, 0, 1)
     UnsnapTex(bg)
     power.bg = bg
 
     power.colorPower = true
+
+    -- Custom power bar fill color
+    local customFill = settings.customPowerFillColor
+    if customFill then
+        power.colorPower = false
+        power:SetStatusBarColor(customFill.r, customFill.g, customFill.b)
+        power.PostUpdateColor = function(self)
+            local s2 = GetSettingsForUnit(unit)
+            local cf = s2 and s2.customPowerFillColor
+            if cf then
+                self:SetStatusBarColor(cf.r, cf.g, cf.b)
+            end
+        end
+    end
+
+    -- Custom power bar background color
+    local customBg = settings.customPowerBgColor
+    if customBg then
+        bg:SetColorTexture(customBg.r, customBg.g, customBg.b, 1)
+    end
 
     -- Power percent text overlay
     local ppTextOvr = CreateFrame("Frame", nil, power)
@@ -1820,7 +1858,12 @@ local function CreatePowerBar(frame, unit, settings)
                 ppFS:SetTextColor(1, 1, 1)
             end
         else
-            ppFS:SetTextColor(1, 1, 1)
+            local tc = s.powerTextColor
+            if tc then
+                ppFS:SetTextColor(tc.r, tc.g, tc.b)
+            else
+                ppFS:SetTextColor(1, 1, 1)
+            end
         end
         ppFS:Show()
     end
@@ -1828,7 +1871,7 @@ local function CreatePowerBar(frame, unit, settings)
     ApplyPowerPercentText(settings)
     power._applyPowerPercentText = ApplyPowerPercentText
 
-    ApplyPowerBarOpacity(power, UnitToSettingsKey(unit))
+    ApplyPowerBarAlpha(power, UnitToSettingsKey(unit))
 
     -- Shadow Priest / Elemental Shaman: show Mana on the power bar
     -- (Insanity / Maelstrom is shown as class resource on Resource Bars)
@@ -2873,7 +2916,7 @@ local function StyleSimpleFrame(frame, unit)
     health._euiUnitKey = UnitToSettingsKey(unit)
 
     ApplyHealthBarTexture(health, UnitToSettingsKey(unit))
-    ApplyHealthBarOpacity(health, UnitToSettingsKey(unit))
+    ApplyHealthBarAlpha(health, UnitToSettingsKey(unit))
     ApplyDarkTheme(health)
 
     frame.Health = health
@@ -3007,7 +3050,7 @@ local function StylePetFrame(frame, unit)
     health._euiUnitKey = UnitToSettingsKey(unit)
 
     ApplyHealthBarTexture(health, UnitToSettingsKey(unit))
-    ApplyHealthBarOpacity(health, UnitToSettingsKey(unit))
+    ApplyHealthBarAlpha(health, UnitToSettingsKey(unit))
     ApplyDarkTheme(health)
 
     frame.Health = health
@@ -3756,10 +3799,9 @@ local function ReloadFrames()
     local castbarOpacity = profile.castbarOpacity
     local enabled = profile.enabledFrames
 
-    -- Resolve donor font for mini frames (inherit from focusâ†’targetâ†’player)
-    local donorS = GetMiniDonorSettings()
-    local donorFont = donorS.selectedFont or profile.selectedFont or "Expressway"
-    local donorFontPath = fontPaths[donorFont] or fontPaths["Expressway"]
+    -- Uses global font
+    local donorFontPath = EllesmereUI and EllesmereUI.GetFontPath and EllesmereUI.GetFontPath("unitFrames")
+        or "Interface\\AddOns\\EllesmereUI\\media\\fonts\\Expressway.TTF"
 
     -- Live enable/disable frames without reload
     local function ToggleFrame(unit, frame)
@@ -4764,16 +4806,13 @@ local function ReloadFrames()
                 -- Override texture settings from donor
                 local uKey = UnitToSettingsKey(unit)
                 local origTex = settings.healthBarTexture
-                local origHbOp = settings.healthBarOpacity
                 settings.healthBarTexture = donorSettings.healthBarTexture
-                settings.healthBarOpacity = donorSettings.healthBarOpacity
                 ApplyHealthBarTexture(frame.Health, uKey)
-                ApplyHealthBarOpacity(frame.Health, uKey)
                 settings.healthBarTexture = origTex
-                settings.healthBarOpacity = origHbOp
+                ApplyHealthBarAlpha(frame.Health, uKey)
             else
                 ApplyHealthBarTexture(frame.Health, UnitToSettingsKey(unit))
-                ApplyHealthBarOpacity(frame.Health, UnitToSettingsKey(unit))
+                ApplyHealthBarAlpha(frame.Health, UnitToSettingsKey(unit))
             end
             ApplyDarkTheme(frame.Health)
             if frame.Health.ForceUpdate then
@@ -4782,15 +4821,23 @@ local function ReloadFrames()
 
             -- Apply power bar opacity
             if frame.Power then
-                if isMiniFrame then
-                    local uKey = UnitToSettingsKey(unit)
-                    local origPbOp = settings.powerBarOpacity
-                    settings.powerBarOpacity = donorSettings.powerBarOpacity
-                    ApplyPowerBarOpacity(frame.Power, uKey)
-                    settings.powerBarOpacity = origPbOp
+                ApplyPowerBarAlpha(frame.Power, UnitToSettingsKey(unit))
+
+                -- Re-apply custom power bar colors
+                local customFill = settings.customPowerFillColor
+                if customFill then
+                    frame.Power.colorPower = false
+                    frame.Power:SetStatusBarColor(customFill.r, customFill.g, customFill.b)
                 else
-                    ApplyPowerBarOpacity(frame.Power, UnitToSettingsKey(unit))
+                    frame.Power.colorPower = true
                 end
+                local customBg = settings.customPowerBgColor
+                if customBg and frame.Power.bg then
+                    frame.Power.bg:SetColorTexture(customBg.r, customBg.g, customBg.b, 1)
+                elseif frame.Power.bg then
+                    frame.Power.bg:SetColorTexture(0, 0, 0, 1)
+                end
+                if frame.Power.ForceUpdate then frame.Power:ForceUpdate() end
             end
 
             if frame.unifiedBorder then
@@ -5637,7 +5684,6 @@ function SetupOptionsPanel()
         end
     end
     ns.ResolveFontPath = ResolveFontPath
-    ns.fontPaths = fontPaths
 
     -- Trigger the EllesmereUI options module registration now that ns.db is ready
     if ns._InitEUIModule then
@@ -5934,6 +5980,16 @@ function EllesmereUF:OnInitialize()
         end
     end
     ResolveFontPath()
+
+    -- Append SharedMedia textures to runtime tables so SM texture keys resolve
+    if EllesmereUI.AppendSharedMediaTextures then
+        EllesmereUI.AppendSharedMediaTextures(
+            healthBarTextureNames,
+            healthBarTextureOrder,
+            nil,
+            healthBarTextures
+        )
+    end
 
     -- Migrate old texture keys (gradient, grunge, stripe) to "none"
     do

@@ -2125,8 +2125,8 @@ initFrame:SetScript("OnEvent", function(self)
             { type = "dropdown", text = "Health Text",
               disabled = healthOff,
               disabledTooltip = "Enable Health Bar",
-              values = { none = "None", both = "Current HP | Percent", curhpshort = "Current HP Only", perhp = "Percent Only" },
-              order = { "none", "both", "curhpshort", "perhp" },
+              values = { none = "None", perhp = "Health %", perhpnosign = "Health % (No Sign)", curhpshort = "Health #", perhpnum = "Health % | #", both = "Health # | %" },
+              order = { "none", "---", "perhp", "perhpnosign", "curhpshort", "perhpnum", "both" },
               getValue = function() local p = DB(); return p and p.health.textFormat or "none" end,
               setValue = function(v)
                   local p = DB(); if not p then return end
