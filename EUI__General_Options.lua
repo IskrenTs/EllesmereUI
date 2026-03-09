@@ -3294,37 +3294,21 @@ initFrame:SetScript("OnEvent", function(self)
             presetEntries[#presetEntries + 1] = {
                 label = "EllesmereUI (Default)",
                 onApply = function()
-                    EllesmereUI:ShowConfirmPopup({
-                        title = "Apply EllesmereUI Defaults",
-                        message = "This will reset all addon settings to EllesmereUI defaults and save as your active profile. Continue?",
-                        confirmText = "Apply",
-                        cancelText = "Cancel",
-                        onConfirm = function()
-                            if EllesmereUIDB then
-                                EllesmereUIDB._pendingPresetReset = "ellesmereui"
-                                EllesmereUIDB._pendingPresetName = UniquePresetName("EllesmereUI")
-                            end
-                            ReloadUI()
-                        end,
-                    })
+                    if EllesmereUIDB then
+                        EllesmereUIDB._pendingPresetReset = "ellesmereui"
+                        EllesmereUIDB._pendingPresetName = UniquePresetName("EllesmereUI")
+                    end
+                    ReloadUI()
                 end,
             }
 
             -- Spin the Wheel
             presetEntries[#presetEntries + 1] = {
-                label = "Spin the Wheel (Randomize)",
+                label = "Spin the Wheel",
                 onApply = function()
-                    EllesmereUI:ShowConfirmPopup({
-                        title = "Spin the Wheel",
-                        message = "This will randomize all your settings (except positions). Party Mode will be enabled. Continue?",
-                        confirmText = "Spin!",
-                        cancelText = "Cancel",
-                        onConfirm = function()
-                            EllesmereUI.SpinTheWheel()
-                            EllesmereUI.SaveCurrentAsProfile(UniquePresetName("Spin the Wheel"))
-                            ReloadUI()
-                        end,
-                    })
+                    EllesmereUI.SpinTheWheel()
+                    EllesmereUI.SaveCurrentAsProfile(UniquePresetName("Spin the Wheel"))
+                    ReloadUI()
                 end,
             }
 
@@ -3495,13 +3479,13 @@ initFrame:SetScript("OnEvent", function(self)
         end
 
         -------------------------------------------------------------------
-        --  CDM LAYOUT PROFILES section
+        --  CDM SPELL LAYOUT section
         -------------------------------------------------------------------
         if C_AddOns.IsAddOnLoaded("EllesmereUICooldownManager") then
-            _, h = W:SectionHeader(parent, "CDM LAYOUT PROFILES", y);  y = y - h
+            _, h = W:SectionHeader(parent, "CDM SPELL LAYOUT", y);  y = y - h
 
-            -- Export CDM layout button
-            _, h = W:WideButton(parent, "Export CDM Layout", y, function()
+            -- Export CDM spell layout button
+            _, h = W:WideButton(parent, "Export CDM Spell Layout", y, function()
                 local str, err = EllesmereUI.ExportCDMLayout()
                 if str then
                     EllesmereUI:ShowExportPopup(str)
@@ -3513,8 +3497,8 @@ initFrame:SetScript("OnEvent", function(self)
                 end
             end);  y = y - h
 
-            -- Import CDM layout button
-            _, h = W:WideButton(parent, "Import CDM Layout", y, function()
+            -- Import CDM spell layout button
+            _, h = W:WideButton(parent, "Import CDM Spell Layout", y, function()
                 EllesmereUI:ShowImportPopup(function(importStr)
                     local layoutData, err = EllesmereUI.DecodeCDMLayoutString(importStr)
                     if not layoutData then
@@ -3532,10 +3516,10 @@ initFrame:SetScript("OnEvent", function(self)
                         -- All spells tracked, apply immediately
                         local ok, applyErr = EllesmereUI.ApplyCDMLayout(layoutData)
                         if ok then
-                            print("|cff0cd29fEllesmereUI|r: CDM layout imported successfully. /reload to apply.")
+                            print("|cff0cd29fEllesmereUI|r: CDM spell layout imported successfully. /reload to apply.")
                             EllesmereUI:ShowInfoPopup({
-                                title = "CDM Layout Imported",
-                                content = "Layout applied successfully.\n\nPlease /reload to see the changes.",
+                                title = "CDM Spell Layout Imported",
+                                content = "Spell layout applied successfully.\n\nPlease /reload to see the changes.",
                             })
                         else
                             EllesmereUI:ShowInfoPopup({
@@ -3552,16 +3536,16 @@ initFrame:SetScript("OnEvent", function(self)
                             title = "Spells Required",
                             content = #missing .. " spell(s) need to be enabled in CDM before this layout can be imported.\n\n"
                                 .. "Check your chat window for the full list of required spells.\n\n"
-                                .. "Enable them in CDM Cooldowns/Utility/Buffs settings, then click \"Apply Pending CDM Layout\" below.",
+                                .. "Enable them in CDM Cooldowns/Utility/Buffs settings, then click \"Apply Pending CDM Spell Layout\" below.",
                         })
                         EllesmereUI:RefreshPage()
                     end
                 end)
             end);  y = y - h
 
-            -- "Apply Pending CDM Layout" button (only visible when there's a pending import)
+            -- "Apply Pending CDM Spell Layout" button (only visible when there's a pending import)
             if _cdmPendingLayout then
-                _, h = W:WideButton(parent, "Apply Pending CDM Layout", y, function()
+                _, h = W:WideButton(parent, "Apply Pending CDM Spell Layout", y, function()
                     if not _cdmPendingLayout then return end
 
                     -- Re-check missing spells
@@ -3572,10 +3556,10 @@ initFrame:SetScript("OnEvent", function(self)
                         if ok then
                             _cdmPendingLayout = nil
                             _cdmMissingSpells = nil
-                            print("|cff0cd29fEllesmereUI|r: CDM layout imported successfully. /reload to apply.")
+                            print("|cff0cd29fEllesmereUI|r: CDM spell layout imported successfully. /reload to apply.")
                             EllesmereUI:ShowInfoPopup({
-                                title = "CDM Layout Imported",
-                                content = "Layout applied successfully.\n\nPlease /reload to see the changes.",
+                                title = "CDM Spell Layout Imported",
+                                content = "Spell layout applied successfully.\n\nPlease /reload to see the changes.",
                             })
                             EllesmereUI:RefreshPage()
                         else
@@ -3604,7 +3588,7 @@ initFrame:SetScript("OnEvent", function(self)
                     if allPresent then
                         EllesmereUI:ShowInfoPopup({
                             title = "All Spells Ready",
-                            content = "All required spells are now tracked. Click \"Apply Pending CDM Layout\" to finish the import.",
+                            content = "All required spells are now tracked. Click \"Apply Pending CDM Spell Layout\" to finish the import.",
                         })
                     end
                 end);  y = y - h
@@ -3613,12 +3597,12 @@ initFrame:SetScript("OnEvent", function(self)
                 _, h = W:WideButton(parent, "Cancel Pending Import", y, function()
                     _cdmPendingLayout = nil
                     _cdmMissingSpells = nil
-                    print("|cff0cd29fEllesmereUI|r: CDM layout import cancelled.")
+                    print("|cff0cd29fEllesmereUI|r: CDM spell layout import cancelled.")
                     EllesmereUI:RefreshPage()
                 end);  y = y - h
             end
 
-            -- "How does this work?" link for CDM layouts
+            -- "How does this work?" link for CDM spell layouts
             do
                 local ROW_H = 30
                 local infoFrame = CreateFrame("Frame", nil, parent)
@@ -3643,14 +3627,14 @@ initFrame:SetScript("OnEvent", function(self)
                 end)
                 infoBtn:SetScript("OnClick", function()
                     EllesmereUI:ShowInfoPopup({
-                        title = "CDM Layout Profiles",
-                        content = "CDM Layout Profiles let you share which abilities are assigned to which CDM bars, separate from your visual settings.\n\n"
+                        title = "CDM Spell Layout",
+                        content = "CDM Spell Layout lets you share which abilities are assigned to which CDM bars, completely separate from your visual settings.\n\n"
                             .. "WHAT'S INCLUDED\n"
                             .. "Spell assignments for all CDM bars (Cooldowns, Utility, Buffs, and custom bars), plus tracked buff bar spell assignments.\n\n"
                             .. "WHAT'S NOT INCLUDED\n"
                             .. "Visual styling (icon size, borders, colors, shapes), bar positions, bar glows, and all other appearance settings. Those stay in your main profile.\n\n"
                             .. "IMPORTING\n"
-                            .. "When you import a CDM layout, the system checks which spells need to be tracked in CDM. "
+                            .. "When you import a CDM spell layout, the system checks which spells need to be tracked in CDM. "
                             .. "If any spells are missing, they'll be listed in chat. Enable them in CDM settings first, then apply the layout.\n\n"
                             .. "This is spec-specific. Export from the spec you want to share, and import on the spec you want to apply it to.",
                     })

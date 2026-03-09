@@ -175,6 +175,87 @@ end
 EllesmereUI._DeepCopy = DeepCopy
 
 -------------------------------------------------------------------------------
+--  CDM spell-layout fields: excluded from main profile snapshots/applies.
+--  These are managed exclusively by the CDM Spell Layout export/import.
+-------------------------------------------------------------------------------
+local CDM_SPELL_KEYS = {
+    trackedSpells = true,
+    extraSpells   = true,
+    removedSpells = true,
+    dormantSpells = true,
+    customSpells  = true,
+}
+
+--- Deep-copy a CDM profile, stripping all spell-layout data.
+--- Removes per-bar spell lists and the top-level specProfiles table.
+local function DeepCopyCDMStyleOnly(src)
+    if type(src) ~= "table" then return src end
+    local copy = {}
+    for k, v in pairs(src) do
+        if k == "specProfiles" then
+            -- Omit entirely — spell-layout only
+        elseif k == "cdmBars" and type(v) == "table" then
+            -- Deep-copy cdmBars but strip spell fields from each bar entry
+            local barsCopy = {}
+            for bk, bv in pairs(v) do
+                if bk == "bars" and type(bv) == "table" then
+                    local barList = {}
+                    for i, bar in ipairs(bv) do
+                        local barCopy = {}
+                        for fk, fv in pairs(bar) do
+                            if not CDM_SPELL_KEYS[fk] then
+                                barCopy[fk] = DeepCopy(fv)
+                            end
+                        end
+                        barList[i] = barCopy
+                    end
+                    barsCopy[bk] = barList
+                else
+                    barsCopy[bk] = DeepCopy(bv)
+                end
+            end
+            copy[k] = barsCopy
+        else
+            copy[k] = DeepCopy(v)
+        end
+    end
+    return copy
+end
+
+--- Merge a CDM style-only snapshot back into the live profile,
+--- preserving all existing spell-layout fields.
+local function ApplyCDMStyleOnly(profile, snap)
+    -- Apply top-level non-spell keys
+    for k, v in pairs(snap) do
+        if k == "specProfiles" then
+            -- Never overwrite specProfiles from a style snapshot
+        elseif k == "cdmBars" and type(v) == "table" then
+            if not profile.cdmBars then profile.cdmBars = {} end
+            for bk, bv in pairs(v) do
+                if bk == "bars" and type(bv) == "table" then
+                    if not profile.cdmBars.bars then profile.cdmBars.bars = {} end
+                    for i, barSnap in ipairs(bv) do
+                        if not profile.cdmBars.bars[i] then
+                            profile.cdmBars.bars[i] = {}
+                        end
+                        local liveBar = profile.cdmBars.bars[i]
+                        for fk, fv in pairs(barSnap) do
+                            if not CDM_SPELL_KEYS[fk] then
+                                liveBar[fk] = DeepCopy(fv)
+                            end
+                        end
+                    end
+                else
+                    profile.cdmBars[bk] = DeepCopy(bv)
+                end
+            end
+        else
+            profile[k] = DeepCopy(v)
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
 --  Profile DB helpers
 --  Profiles are stored in EllesmereUIDB.profiles = { [name] = profileData }
 --  profileData = {
@@ -234,7 +315,11 @@ function EllesmereUI.SnapshotAllAddons()
         if IsAddonLoaded(entry.folder) then
             local profile = GetAddonProfile(entry)
             if profile then
-                data.addons[entry.folder] = DeepCopy(profile)
+                if entry.folder == "EllesmereUICooldownManager" then
+                    data.addons[entry.folder] = DeepCopyCDMStyleOnly(profile)
+                else
+                    data.addons[entry.folder] = DeepCopy(profile)
+                end
             end
         end
     end
@@ -264,7 +349,11 @@ function EllesmereUI.SnapshotAddons(folderList)
             if entry.folder == folderName and IsAddonLoaded(folderName) then
                 local profile = GetAddonProfile(entry)
                 if profile then
-                    data.addons[folderName] = DeepCopy(profile)
+                    if folderName == "EllesmereUICooldownManager" then
+                        data.addons[folderName] = DeepCopyCDMStyleOnly(profile)
+                    else
+                        data.addons[folderName] = DeepCopy(profile)
+                    end
                 end
                 break
             end
@@ -284,11 +373,13 @@ function EllesmereUI.ApplyProfileData(profileData)
         if snap and IsAddonLoaded(entry.folder) then
             local profile = GetAddonProfile(entry)
             if profile then
-                if entry.isFlat then
+                if entry.folder == "EllesmereUICooldownManager" then
+                    -- Style-only: preserve all spell-layout fields
+                    ApplyCDMStyleOnly(profile, snap)
+                elseif entry.isFlat then
                     -- Flat DB: wipe and copy
                     local db = _G[entry.svName]
                     if db then
-                        -- Preserve preset/spec keys that are internal
                         for k in pairs(db) do
                             if not k:match("^_") then
                                 db[k] = nil
@@ -335,7 +426,9 @@ function EllesmereUI.ApplyPartialProfile(profileData)
             if entry.folder == folderName and IsAddonLoaded(folderName) then
                 local profile = GetAddonProfile(entry)
                 if profile then
-                    if entry.isFlat then
+                    if folderName == "EllesmereUICooldownManager" then
+                        ApplyCDMStyleOnly(profile, snap)
+                    elseif entry.isFlat then
                         local db = _G[entry.svName]
                         if db then
                             for k, v in pairs(snap) do
@@ -633,8 +726,8 @@ EllesmereUI.WEEKLY_SPOTLIGHT = nil  -- { name = "...", description = "...", expo
 
 -------------------------------------------------------------------------------
 --  Spin the Wheel: global randomizer
---  Randomizes all addon settings except X/Y offsets and Scale.
---  Party Mode is hard-set to enabled.
+--  Randomizes all addon settings except X/Y offsets, scale, and enable flags.
+--  Does not touch Party Mode.
 -------------------------------------------------------------------------------
 function EllesmereUI.SpinTheWheel()
     local function rColor()
@@ -644,11 +737,6 @@ function EllesmereUI.SpinTheWheel()
     local function pick(t) return t[math.random(#t)] end
     local function rRange(lo, hi) return lo + math.random() * (hi - lo) end
     local floor = math.floor
-
-    -- Party Mode: hard-set to enabled
-    if EllesmereUIDB then
-        EllesmereUIDB.partyMode = true
-    end
 
     -- Randomize each loaded addon (except Nameplates which has its own randomizer)
     for _, entry in ipairs(ADDON_DB_MAP) do
@@ -688,7 +776,8 @@ end
 
 --- Generic profile randomizer for AceDB-style addons.
 --- Skips keys containing "offset", "Offset", "scale", "Scale", "X", "Y",
---- "pos", "Pos", "position", "Position", "anchor", "Anchor" (position-related).
+--- "pos", "Pos", "position", "Position", "anchor", "Anchor" (position-related),
+--- and boolean keys that look like enable/disable toggles.
 function EllesmereUI._RandomizeProfile(profile, folderName)
     local function rColor()
         return { r = math.random(), g = math.random(), b = math.random() }
@@ -707,11 +796,26 @@ function EllesmereUI._RandomizeProfile(profile, folderName)
         return false
     end
 
+    -- Boolean keys that control whether a feature/element is enabled.
+    -- These should never be randomized — users want their frames to stay visible.
+    local function IsEnableKey(k)
+        local kl = k:lower()
+        if kl == "enabled" then return true end
+        if kl:sub(1, 6) == "enable" then return true end
+        if kl:sub(1, 4) == "show" then return true end
+        if kl:sub(1, 4) == "hide" then return true end
+        if kl:find("enabled$") then return true end
+        if kl:find("visible") then return true end
+        return false
+    end
+
     local function RandomizeTable(tbl, depth)
         if depth > 5 then return end  -- safety limit
         for k, v in pairs(tbl) do
             if type(k) == "string" and IsPositionKey(k) then
                 -- Skip position/scale keys
+            elseif type(k) == "string" and type(v) == "boolean" and IsEnableKey(k) then
+                -- Skip enable/show/hide toggle keys
             elseif type(v) == "table" then
                 -- Check if it's a color table
                 if v.r and v.g and v.b then
