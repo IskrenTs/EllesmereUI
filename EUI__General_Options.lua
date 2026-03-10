@@ -79,17 +79,24 @@ initFrame:SetScript("OnEvent", function(self)
     --  { cvarName, euiPreferred }
     --  For the "hide pet/periodic" group we set three CVars to "0" (hidden).
     ---------------------------------------------------------------------------
+    local eqolLoaded = C_AddOns and C_AddOns.IsAddOnLoaded("EnhanceQoL")
+
     local EUI_DEFAULTS = {
         { "cameraDistanceMaxZoomFactor",                    "2.6" },
         { "ActionButtonUseKeyDown",                         "1"   },
         { "SpellQueueWindow",                               "300" },
         { "floatingCombatTextCombatHealing_v2",             "1"   },
-        { "floatingCombatTextCombatDamage_v2",              "1"   },
         { "WorldTextScale_v2",                              "0.5" },
         { "floatingCombatTextCombatLogPeriodicSpells_v2",   "0"   },
         { "floatingCombatTextPetMeleeDamage_v2",            "0"   },
         { "floatingCombatTextPetSpellDamage_v2",            "0"   },
     }
+
+    -- If conflicting addon is loaded, also add damage text CVar to defaults
+    -- so it gets forced to "1" only when the conflict isn't present
+    if not eqolLoaded then
+        EUI_DEFAULTS[#EUI_DEFAULTS + 1] = { "floatingCombatTextCombatDamage_v2", "1" }
+    end
 
     --- Walk the table once at login and apply only where safe.
     local function ApplySmartDefaults()
@@ -101,6 +108,14 @@ initFrame:SetScript("OnEvent", function(self)
         end
     end
     ApplySmartDefaults()
+
+    -- Force damage text CVars off when conflicting addon is present
+    if eqolLoaded then
+        SetCVarSafe("floatingCombatTextCombatDamage_v2", "0")
+        SetCVarSafe("floatingCombatTextCombatLogPeriodicSpells_v2", "0")
+        SetCVarSafe("floatingCombatTextPetMeleeDamage_v2", "0")
+        SetCVarSafe("floatingCombatTextPetSpellDamage_v2", "0")
+    end
 
     ---------------------------------------------------------------------------
     --  Lightweight Error Grabber (replaces Blizzard error popup with chat links)
@@ -1586,10 +1601,15 @@ initFrame:SetScript("OnEvent", function(self)
         local showDmgRow
         showDmgRow, h = W:DualRow(parent, y,
             { type="toggle", text="Show Damage Text",
-              getValue=function() return GetCVarBool("floatingCombatTextCombatDamage_v2") end,
+              disabled=function() return eqolLoaded end,
+              disabledTooltip="Temporarily disabled due to conflicts with third-party addons",
+              getValue=function()
+                if eqolLoaded then return false end
+                return GetCVarBool("floatingCombatTextCombatDamage_v2")
+              end,
               setValue=function(v)
+                if eqolLoaded then return end
                 SetCVarSafe("floatingCombatTextCombatDamage_v2", v and "1" or "0")
-                EllesmereUI:RefreshPage()
               end },
             { type="dropdown", text="Combat Text Font",
               tooltip="WARNING: This feature requires you to re-log or restart WoW to take effect.",
@@ -1612,59 +1632,6 @@ initFrame:SetScript("OnEvent", function(self)
                     cancelText  = "Later",
                 })
               end });  y = y - h
-
-        -- Cog on Show Damage Text for Pet/Periodic Damage
-        do
-            local leftRgn = showDmgRow._leftRegion
-            local function dmgTextOff()
-                return not GetCVarBool("floatingCombatTextCombatDamage_v2")
-            end
-
-            local _, petDmgCogShow = EllesmereUI.BuildCogPopup({
-                title = "Damage Text Settings",
-                rows = {
-                    { type="toggle", label="Show Pet/Periodic Damage",
-                      get=function()
-                        return GetCVarBool("floatingCombatTextCombatLogPeriodicSpells_v2")
-                           and GetCVarBool("floatingCombatTextPetMeleeDamage_v2")
-                           and GetCVarBool("floatingCombatTextPetSpellDamage_v2")
-                      end,
-                      set=function(v)
-                        local val = v and "1" or "0"
-                        SetCVarSafe("floatingCombatTextCombatLogPeriodicSpells_v2", val)
-                        SetCVarSafe("floatingCombatTextPetMeleeDamage_v2", val)
-                        SetCVarSafe("floatingCombatTextPetSpellDamage_v2", val)
-                      end },
-                },
-            })
-            local petDmgCogBtn = CreateFrame("Button", nil, leftRgn)
-            petDmgCogBtn:SetSize(26, 26)
-            petDmgCogBtn:SetPoint("RIGHT", leftRgn._control, "LEFT", -8, 0)
-            leftRgn._lastInline = petDmgCogBtn
-            petDmgCogBtn:SetFrameLevel(leftRgn:GetFrameLevel() + 5)
-            petDmgCogBtn:SetAlpha(dmgTextOff() and 0.15 or 0.4)
-            local petDmgCogTex = petDmgCogBtn:CreateTexture(nil, "OVERLAY")
-            petDmgCogTex:SetAllPoints()
-            petDmgCogTex:SetTexture(EllesmereUI.COGS_ICON)
-            petDmgCogBtn:SetScript("OnEnter", function(self)
-                if dmgTextOff() then
-                    EllesmereUI.ShowWidgetTooltip(self, EllesmereUI.DisabledTooltip("Show Damage Text"))
-                else
-                    self:SetAlpha(0.7)
-                end
-            end)
-            petDmgCogBtn:SetScript("OnLeave", function(self)
-                EllesmereUI.HideWidgetTooltip()
-                self:SetAlpha(dmgTextOff() and 0.15 or 0.4)
-            end)
-            petDmgCogBtn:SetScript("OnClick", function(self)
-                if dmgTextOff() then return end
-                petDmgCogShow(self)
-            end)
-            EllesmereUI.RegisterWidgetRefresh(function()
-                petDmgCogBtn:SetAlpha(dmgTextOff() and 0.15 or 0.4)
-            end)
-        end
 
         _, h = W:Spacer(parent, y, 20);  y = y - h
 

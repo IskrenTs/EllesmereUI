@@ -103,7 +103,8 @@ local defaults = {
     classPowerGap = 2,
     healthBarWidth = 6,
     nameplateOverlapV = 1.05,
-    stackSpacingScale = 100,
+    stackSpacingScale = 50,
+    stackingEnabled = true,
     nameplateYOffset = 0,
     enemyNameTextSize = 11,
     enemyNameColor = { r = 1, g = 1, b = 1 },
@@ -1603,6 +1604,13 @@ function ns.RefreshStackingBounds()
     end
 end
 
+function ns.RefreshStackingMotion()
+    if not SetCVar then return end
+    local db = EllesmereUINameplatesDB or defaults
+    local enabled = (db.stackingEnabled ~= false)
+    SetCVar("nameplateMotion", enabled and 1 or 0)
+end
+
 --- Full visual refresh for all plates â€” called when an entire preset is applied.
 --- Re-runs SetUnit on each active plate, which re-reads all DB values and applies
 --- them.  Only runs on deliberate preset switch (not per-frame or per-event).
@@ -1732,6 +1740,7 @@ local function SetupAuraCVars()
         SetCVar("nameplateMinScale", 1)
         SetCVar("nameplateOverlapH", 1)
         SetCVar("nameplateOverlapV", EllesmereUINameplatesDB and EllesmereUINameplatesDB.nameplateOverlapV or defaults.nameplateOverlapV)
+        SetCVar("nameplateMotion", (db.stackingEnabled ~= false) and 1 or 0)
         SetCVar("nameplateGlobalScale", 1)
         SetCVar("NamePlateHorizontalScale", 1)
         SetCVar("NamePlateVerticalScale", 1)

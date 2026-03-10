@@ -5582,13 +5582,17 @@ function EAB:FinishSetup()
 
     self:RegisterEvent("UPDATE_BONUS_ACTIONBAR", function()
         -- Skyriding mount/dismount: re-apply scale and layout.
-        C_Timer_After(0.1, function()
+        -- Two passes: first at 0.1s (catches most cases), second at 0.5s
+        -- (catches slow slot swaps on dismount where HasAction is briefly false).
+        local function DoLayout()
             if InCombatLockdown() then return end
             for _, info in ipairs(BAR_CONFIG) do
                 self:ApplyScaleForBar(info.key)
                 LayoutBar(info.key)
             end
-        end)
+        end
+        C_Timer_After(0.1, DoLayout)
+        C_Timer_After(0.5, DoLayout)
     end)
 
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA", function()
@@ -6327,11 +6331,21 @@ local function SetupBlizzardMovableFrame(barKey)
         end
         _recentering = true
         if blizzFrame then
+            -- Remove from Blizzard's managed layout before reparenting to
+            -- prevent UIParentBottomManagedFrameContainer:SetSize() taint.
+            blizzFrame.ignoreInLayout = true
+            if blizzFrame.SetIsLayoutFrame then
+                pcall(blizzFrame.SetIsLayoutFrame, blizzFrame, false)
+            end
             blizzFrame:SetParent(holder)
             blizzFrame:ClearAllPoints()
             blizzFrame:SetPoint("CENTER", holder, "CENTER", 0, 0)
         end
         if encounterWidgetBar then
+            encounterWidgetBar.ignoreInLayout = true
+            if encounterWidgetBar.SetIsLayoutFrame then
+                pcall(encounterWidgetBar.SetIsLayoutFrame, encounterWidgetBar, false)
+            end
             encounterWidgetBar:SetParent(holder)
             encounterWidgetBar:ClearAllPoints()
             encounterWidgetBar:SetPoint("CENTER", holder, "CENTER", 0, 0)

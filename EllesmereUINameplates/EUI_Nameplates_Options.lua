@@ -2273,6 +2273,16 @@ initFrame:SetScript("OnEvent", function(self)
                 ns.RefreshNameplateYOffset()
               end });  y = y - h
 
+        _, h = W:DualRow(parent, y,
+            { type="toggle", text="Enable Stacking Nameplates",
+              getValue=function() return DBVal("stackingEnabled") ~= false end,
+              setValue=function(v)
+                DB().stackingEnabled = v
+                ns.RefreshStackingMotion()
+              end,
+              tooltip="When enabled, nameplates stack vertically instead of overlapping." },
+            { type="label", text="" });  y = y - h
+
         _, h = W:Spacer(parent, y, 20);  y = y - h
 
         -----------------------------------------------------------------------

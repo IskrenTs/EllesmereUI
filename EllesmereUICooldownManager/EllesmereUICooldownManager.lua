@@ -12,7 +12,6 @@ ns.ECME = ECME
 local PP = EllesmereUI.PP
 
 local function GetCDMOutline() return EllesmereUI.GetFontOutlineFlag and EllesmereUI.GetFontOutlineFlag() or "" end
-local function GetCDMUseShadow() return EllesmereUI.GetFontUseShadow and EllesmereUI.GetFontUseShadow() or true end
 local function SetCDMFont(fs, font, size)
     if not (fs and fs.SetFont) then return end
     local f = GetCDMOutline()
@@ -41,24 +40,23 @@ local DEFAULT_MAPPING_NAME = "Buff Name (eg: Divine Purpose)"
 -------------------------------------------------------------------------------
 --  Shape Constants (shared with action bars)
 -------------------------------------------------------------------------------
-local CDM_SHAPE_MEDIA = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\"
 local CDM_SHAPE_MASKS = {
-    circle   = CDM_SHAPE_MEDIA .. "circle_mask.tga",
-    csquare  = CDM_SHAPE_MEDIA .. "csquare_mask.tga",
-    diamond  = CDM_SHAPE_MEDIA .. "diamond_mask.tga",
-    hexagon  = CDM_SHAPE_MEDIA .. "hexagon_mask.tga",
-    portrait = CDM_SHAPE_MEDIA .. "portrait_mask.tga",
-    shield   = CDM_SHAPE_MEDIA .. "shield_mask.tga",
-    square   = CDM_SHAPE_MEDIA .. "square_mask.tga",
+    circle   = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\circle_mask.tga",
+    csquare  = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\csquare_mask.tga",
+    diamond  = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\diamond_mask.tga",
+    hexagon  = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\hexagon_mask.tga",
+    portrait = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\portrait_mask.tga",
+    shield   = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\shield_mask.tga",
+    square   = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\square_mask.tga",
 }
 local CDM_SHAPE_BORDERS = {
-    circle   = CDM_SHAPE_MEDIA .. "circle_border.tga",
-    csquare  = CDM_SHAPE_MEDIA .. "csquare_border.tga",
-    diamond  = CDM_SHAPE_MEDIA .. "diamond_border.tga",
-    hexagon  = CDM_SHAPE_MEDIA .. "hexagon_border.tga",
-    portrait = CDM_SHAPE_MEDIA .. "portrait_border.tga",
-    shield   = CDM_SHAPE_MEDIA .. "shield_border.tga",
-    square   = CDM_SHAPE_MEDIA .. "square_border.tga",
+    circle   = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\circle_border.tga",
+    csquare  = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\csquare_border.tga",
+    diamond  = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\diamond_border.tga",
+    hexagon  = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\hexagon_border.tga",
+    portrait = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\portrait_border.tga",
+    shield   = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\shield_border.tga",
+    square   = "Interface\\AddOns\\EllesmereUI\\media\\portraits\\square_border.tga",
 }
 local CDM_SHAPE_INSETS = {
     circle = 17, csquare = 17, diamond = 14,
@@ -243,6 +241,11 @@ end
 -- Rebuilt on PLAYER_LOGIN and spec change. Used by custom bars to find CDM child frames by spellID.
 local _spellToCooldownID = {}
 
+-- Persistent cdID -> correct spellID map for buff viewer children where the
+-- cooldownInfo struct returns the wrong spellID. Built out of combat.
+local _cdIDToCorrectSID = {}
+local RebuildCdIDToCorrectSID  -- forward declaration; defined after ResolveChildSpellID
+
 local function RebuildSpellToCooldownID()
     wipe(_spellToCooldownID)
     if not C_CooldownViewer or not C_CooldownViewer.GetCooldownViewerCategorySet then return end
@@ -258,9 +261,22 @@ local function RebuildSpellToCooldownID()
                     if info.overrideSpellID and info.overrideSpellID > 0 then
                         _spellToCooldownID[info.overrideSpellID] = cdID
                     end
+                    if info.linkedSpellIDs then
+                        for _, lsid in ipairs(info.linkedSpellIDs) do
+                            if lsid and lsid > 0 then
+                                _spellToCooldownID[lsid] = cdID
+                            end
+                        end
+                    end
                 end
             end
         end
+    end
+    -- Also map correct spellIDs from the persistent cdID -> correctSID map.
+    -- This map is built out of combat by RebuildCdIDToCorrectSID and avoids
+    -- calling frame methods that can return secret values in combat.
+    for cdID, correctSid in pairs(_cdIDToCorrectSID) do
+        _spellToCooldownID[correctSid] = cdID
     end
 end
 
@@ -295,11 +311,6 @@ end
 local _cdmKeybindCache       = {}   -- [spellID] -> formatted key string
 local _keybindRebuildPending = false
 local _keybindCacheReady     = false  -- true after first successful build
-
--- FormatTime string cache: same floored-second = same string output.
--- Wiped when the integer second changes (not per tick).
-local _fmtCache = {}
-local _fmtCacheSec = -1
 
 -- Combat state tracked via events (InCombatLockdown() can lag behind PLAYER_REGEN_DISABLED)
 local _inCombat = false
@@ -985,6 +996,123 @@ local MAIN_BAR_KEYS = { cooldowns = true, utility = true, buffs = true }
 local TALENT_AWARE_BAR_TYPES = { cooldowns = true, utility = true }
 
 -------------------------------------------------------------------------------
+--  Resolve the best spellID from a CooldownViewerCooldownInfo struct.
+--  Priority: overrideSpellID > first linkedSpellID > spellID.
+--  The base spellID field can be a spec aura (e.g. 137007 "Unholy Death
+--  Knight") while the real tracked spell lives in linkedSpellIDs.
+-------------------------------------------------------------------------------
+local function ResolveInfoSpellID(info)
+    if not info then return nil end
+    if info.overrideSpellID and info.overrideSpellID > 0 then
+        return info.overrideSpellID
+    end
+    local linked = info.linkedSpellIDs
+    if linked then
+        for i = 1, #linked do
+            if linked[i] and linked[i] > 0 then return linked[i] end
+        end
+    end
+    if info.spellID and info.spellID > 0 then return info.spellID end
+    return nil
+end
+
+-------------------------------------------------------------------------------
+--  Resolve the best spellID from a Blizzard CDM viewer child frame.
+--  For buff bars the cooldownInfo struct often contains the wrong spellID
+--  (spec aura instead of the actual tracked buff). The child frame itself
+--  knows the correct spell via GetAuraSpellID / GetSpellID at runtime.
+--  Falls back to ResolveInfoSpellID when the frame methods aren't available.
+--  ONLY used in out-of-combat paths (snapshot, dropdown, reconcile).
+-------------------------------------------------------------------------------
+local function ResolveChildSpellID(child)
+    if not child then return nil end
+    -- Prefer the aura spellID (most accurate for buff viewers).
+    -- Wrap comparisons in pcall: these frame methods can return secret
+    -- number values in combat which cannot be compared with > 0.
+    if child.GetAuraSpellID then
+        local ok, auraID = pcall(child.GetAuraSpellID, child)
+        if ok and auraID then
+            local cmpOk, gt = pcall(function() return auraID > 0 end)
+            if cmpOk and gt then return auraID end
+        end
+    end
+    -- Then try the frame's own spellID
+    if child.GetSpellID then
+        local ok, fid = pcall(child.GetSpellID, child)
+        if ok and fid then
+            local cmpOk, gt = pcall(function() return fid > 0 end)
+            if cmpOk and gt then return fid end
+        end
+    end
+    -- Fall back to cooldownInfo struct
+    local cdID = child.cooldownID or (child.cooldownInfo and child.cooldownInfo.cooldownID)
+    if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+        return ResolveInfoSpellID(info)
+    end
+    return nil
+end
+
+-------------------------------------------------------------------------------
+--  Persistent cdID -> correct spellID map, built out of combat by
+--  ResolveChildSpellID when frame methods return clean (non-secret) values.
+--  The tick cache uses this to create dual mappings without calling
+--  ResolveChildSpellID in combat (where secret values break comparisons).
+-------------------------------------------------------------------------------
+
+RebuildCdIDToCorrectSID = function()
+    -- Don't wipe — preserve entries from snapshot/reconcile/dropdown that
+    -- were captured when frame methods returned clean values. Only add new
+    -- entries or update existing ones.
+    if not C_CooldownViewer or not C_CooldownViewer.GetCooldownViewerCooldownInfo then return end
+    local viewers = { "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
+    for _, vName in ipairs(viewers) do
+        local vf = _G[vName]
+        if vf then
+            for ci = 1, vf:GetNumChildren() do
+                local ch = select(ci, vf:GetChildren())
+                if ch then
+                    local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
+                    if cdID and not _cdIDToCorrectSID[cdID] then
+                        -- Only try if we don't already have a mapping for this cdID
+                        local correctSid = ResolveChildSpellID(ch)
+                        if correctSid and correctSid > 0 then
+                            local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                            if info then
+                                local infoSid = ResolveInfoSpellID(info)
+                                if infoSid and correctSid ~= infoSid then
+                                    _cdIDToCorrectSID[cdID] = correctSid
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+--  Returns true only for spells that are purely passive with no cooldown.
+--  Spec aura passives (e.g. "Unholy Death Knight") have IsSpellPassive=true
+--  AND no cooldown duration — they should never appear on a CDM bar.
+--  Active spells that happen to be flagged passive in the spellbook (common
+--  for DK abilities) still have a real cooldown, so they pass through.
+-------------------------------------------------------------------------------
+local function IsTrulyPassive(sid)
+    if not sid or sid <= 0 then return false end
+    if not (C_Spell.IsSpellPassive and C_Spell.IsSpellPassive(sid)) then return false end
+    -- Spell is flagged passive — check if it also has no cooldown duration.
+    -- If it has a cooldown it's an active ability that happens to be passive-flagged.
+    local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(sid)
+    if cdInfo and cdInfo.duration and cdInfo.duration > 0 then return false end
+    -- Also check charges — a spell with charges is active regardless of passive flag.
+    local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(sid)
+    if chargeInfo and chargeInfo.maxCharges and chargeInfo.maxCharges > 0 then return false end
+    return true
+end
+
+-------------------------------------------------------------------------------
 --  Build a set of currently known (learned) spellIDs across all CDM categories.
 --  Uses GetCooldownViewerCategorySet(cat, false) which returns only learned
 --  spells, then resolves each cdID to its base spellID.
@@ -995,10 +1123,19 @@ local function BuildKnownSpellIDSet()
     for cat = 0, 3 do
         local knownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(cat, false)
         if knownIDs then
+            -- Passive filter only for cooldown categories (0/1).
+            -- Buff/debuff categories (2/3) contain proc auras which are passive by nature.
+            local filterPassives = (cat == 0 or cat == 1)
             for _, cdID in ipairs(knownIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.spellID and info.spellID > 0 then
-                    known[info.spellID] = true
+                if info then
+                    local sid = ResolveInfoSpellID(info)
+                    if sid and sid > 0 then
+                        local skip = filterPassives and IsTrulyPassive(sid)
+                        if not skip then
+                            known[sid] = true
+                        end
+                    end
                 end
             end
         end
@@ -1189,8 +1326,9 @@ local function SwitchSpecProfile(newSpecKey)
         BuildAllCDMBars()
         ns.BuildTrackedBuffBars()
         RegisterCDMUnlockElements()
-        C_Timer.After(1, ForceResnapshotMainBars)
-        C_Timer.After(3, ForceResnapshotMainBars)
+        -- Force viewers to populate before reconciling so the viewer is fully
+        -- ready when ReconcileMainBarSpells runs. Bare timers are intentionally
+        -- omitted here — a partially-populated viewer causes spells to be dropped.
         ForcePopulateBlizzardViewers(function()
             ForceResnapshotMainBars()
             StartResnapshotRetry()
@@ -1285,11 +1423,10 @@ local function SlotSortComparator(a, b)
 end
 
 local cachedSlots, cacheTime = nil, 0
-local CACHE_DURATION = 0.5
 
 local function GetSortedSlots(forceRefresh)
     local now = GetTime()
-    if not forceRefresh and cachedSlots and (now - cacheTime) < CACHE_DURATION then
+    if not forceRefresh and cachedSlots and (now - cacheTime) < 0.5 then
         return cachedSlots
     end
     local root = _G.BuffIconCooldownViewer
@@ -1632,7 +1769,7 @@ local function ResolveBlizzChildSpellID(blizzChild)
     if cdID then
         local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
             and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-        if info then return info.overrideSpellID or info.spellID end
+        if info then return ResolveInfoSpellID(info) end
     end
     return nil
 end
@@ -1780,12 +1917,6 @@ local function GetCDMOutline()
         return EllesmereUI.GetFontOutlineFlag()
     end
     return "OUTLINE"
-end
-local function GetCDMUseShadow()
-    if EllesmereUI and EllesmereUI.GetFontUseShadow then
-        return EllesmereUI.GetFontUseShadow()
-    end
-    return false
 end
 local function SetBlizzCDMFont(fs, font, size)
     if not (fs and fs.SetFont) then return end
@@ -3472,16 +3603,8 @@ UpdateCDMBarIcons = function(barKey)
             -- Store mapping so proc glow hooks can find our icon from the Blizzard child
             ourIcon._blizzChild = blizzIcon
 
-            -- Copy the icon texture
-            local blizzTex = blizzIcon.Icon
-            if blizzTex then
-                local texPath = blizzTex:GetTexture()
-                if texPath then
-                    ourIcon._tex:SetTexture(texPath)
-                end
-            end
-
-            -- Resolve spell ID from Blizzard CDM child
+            -- Resolve spell ID from Blizzard CDM child first, so we can use
+            -- the correct overrideSpellID for the icon texture.
             local blizzCdID = blizzIcon.cooldownID
             if not blizzCdID and blizzIcon.cooldownInfo then
                 blizzCdID = blizzIcon.cooldownInfo.cooldownID
@@ -3491,7 +3614,29 @@ UpdateCDMBarIcons = function(barKey)
                 local cdViewerInfo = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
                     and C_CooldownViewer.GetCooldownViewerCooldownInfo(blizzCdID)
                 if cdViewerInfo then
-                    resolvedSid = cdViewerInfo.overrideSpellID or cdViewerInfo.spellID
+                    resolvedSid = ResolveInfoSpellID(cdViewerInfo)
+                end
+            end
+
+            -- Set icon texture: prefer the resolved spellID's own texture so we
+            -- always show the correct icon even when Blizzard's CDM child uses an
+            -- internal tracking spellID with a different icon (e.g. spec passives).
+            do
+                local set = false
+                if resolvedSid and resolvedSid > 0 then
+                    local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(resolvedSid)
+                    if tex then
+                        ourIcon._tex:SetTexture(tex)
+                        set = true
+                    end
+                end
+                if not set then
+                    -- Fallback: copy directly from the Blizzard child
+                    local blizzTex = blizzIcon.Icon
+                    if blizzTex then
+                        local texPath = blizzTex:GetTexture()
+                        if texPath then ourIcon._tex:SetTexture(texPath) end
+                    end
                 end
             end
 
@@ -3685,12 +3830,19 @@ local function RefreshCDMIconAppearance(barKey)
         local shape = barData.iconShape or "none"
         ApplyShapeToCDMIcon(icon, shape, barData)
 
-        -- Reset active state so glow type change takes effect on next tick
+        -- Reset active state so glow type change takes effect on next tick.
+        -- Preserve proc glow across rebuilds to avoid visible blink at load-in.
+        local hadProcGlow = icon._procGlowActive
         if icon._glowOverlay then
             StopNativeGlow(icon._glowOverlay)
         end
         icon._isActive = false
-        icon._procGlowActive = false
+        if hadProcGlow and icon._glowOverlay then
+            StartNativeGlow(icon._glowOverlay, PROC_GLOW_STYLE, PROC_GLOW_R, PROC_GLOW_G, PROC_GLOW_B)
+            icon._procGlowActive = true
+        else
+            icon._procGlowActive = false
+        end
     end
 end
 ns.RefreshCDMIconAppearance = RefreshCDMIconAppearance
@@ -3716,20 +3868,23 @@ local function SnapshotBlizzardCDM(barKey, barData)
 
     table.sort(blizzIcons, SortBlizzChildren)
 
+    -- Passive filter only applies to cooldown bars (cats 0/1).
+    -- Buff bars (cat 2/3) track proc auras which are passive by nature.
+    local filterPassives = (barKey ~= "buffs")
+
     local tracked = {}
     for _, child in ipairs(blizzIcons) do
-        local cdID = child.cooldownID
-        if not cdID and child.cooldownInfo then
-            cdID = child.cooldownInfo.cooldownID
-        end
-        if cdID then
-            -- Resolve to base spellID for stable persistence
-            local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
-                and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-            if info then
-                local sid = info.spellID
-                if sid and sid > 0 then
-                    tracked[#tracked + 1] = sid
+        local sid = ResolveChildSpellID(child)
+        if sid and sid > 0 then
+            local skip = filterPassives and IsTrulyPassive(sid)
+            if not skip then
+                tracked[#tracked + 1] = sid
+                -- Store spellID -> cdID mapping for buff bars so the tick cache
+                -- can find the correct viewer child even when the cooldownInfo
+                -- struct returns a different spellID.
+                local cdID = child.cooldownID or (child.cooldownInfo and child.cooldownInfo.cooldownID)
+                if cdID then
+                    _cdIDToCorrectSID[cdID] = sid
                 end
             end
         end
@@ -4161,7 +4316,7 @@ local function UpdateAllCDMBars(dt)
                                 end
                                 -- All-child cache: resolved spellID -> blizzChild (used by custom bars
                                 -- to get auraInstanceID directly from the frame, which is non-secret)
-                                local resolvedSid = info.overrideSpellID or info.spellID
+                                local resolvedSid = ResolveInfoSpellID(info)
                                 if resolvedSid and resolvedSid > 0 then
                                     _tickBlizzAllChildCache[resolvedSid] = ch
                                     -- Buff-viewer-only child cache (for IsShown fallback on
@@ -4170,11 +4325,24 @@ local function UpdateAllCDMBars(dt)
                                         _tickBlizzBuffChildCache[resolvedSid] = ch
                                     end
                                 end
+                                -- Also map the correct spellID for buff viewer children.
+                                -- Uses the persistent _cdIDToCorrectSID map (built OOC)
+                                -- instead of calling ResolveChildSpellID which can fail
+                                -- in combat due to secret number values.
+                                if isBuffViewer and cdID then
+                                    local correctSid = _cdIDToCorrectSID[cdID]
+                                    if correctSid and correctSid ~= resolvedSid then
+                                        _tickBlizzAllChildCache[correctSid] = ch
+                                        _tickBlizzBuffChildCache[correctSid] = ch
+                                        if ch.wasSetFromAura == true or ch.auraInstanceID ~= nil then
+                                            _tickBlizzActiveCache[correctSid] = true
+                                        end
+                                    end
+                                end
                                 -- Active cache: resolved spellID -> true when aura-active
                                 if ch.wasSetFromAura == true or ch.auraInstanceID ~= nil then
-                                    local sid = info.overrideSpellID or info.spellID
-                                    if sid and sid > 0 then
-                                        _tickBlizzActiveCache[sid] = true
+                                    if resolvedSid and resolvedSid > 0 then
+                                        _tickBlizzActiveCache[resolvedSid] = true
                                     end
                                 end
                                 -- Hook the child's Cooldown widget to capture DurationObjects
@@ -4687,15 +4855,22 @@ function ns.GetCDMSpellsForBar(barKey)
 
     -- Build our pool set: spellIDs we're currently tracking on this bar
     local ourPool = {}  -- [spellID] = true
+    local isBuffBarType = (barType == "buffs")
     if bd then
         if bd.customSpells then
             for _, sid in ipairs(bd.customSpells) do
-                if sid and sid ~= 0 then ourPool[sid] = true end
+                if sid and sid ~= 0 then
+                    local skip = (not isBuffBarType) and IsTrulyPassive(sid)
+                    if not skip then ourPool[sid] = true end
+                end
             end
         end
         if bd.trackedSpells then
             for _, sid in ipairs(bd.trackedSpells) do
-                if sid and sid ~= 0 then ourPool[sid] = true end
+                if sid and sid ~= 0 then
+                    local skip = (not isBuffBarType) and IsTrulyPassive(sid)
+                    if not skip then ourPool[sid] = true end
+                end
             end
         end
         if bd.extraSpells then
@@ -4715,31 +4890,47 @@ function ns.GetCDMSpellsForBar(barKey)
     -- Scan only the viewers that match this bar's category group.
     -- Scanning all viewers would pollute blizzTracked with spells from the wrong group.
     local blizzTracked = {}  -- [spellID] = true
-    local function ScanViewerSpellIDs(viewerName)
+    -- Also build a cdID -> spellID lookup from viewer children so the
+    -- dropdown loop (which iterates cdIDs without children) can use the
+    -- frame-resolved spellID instead of the potentially wrong cooldownInfo.
+    local cdIDToChildSID = {}
+    local function ScanViewerSpellIDs(viewerName, filterPassives)
         local vf = _G[viewerName]
         if not vf then return end
         for i = 1, vf:GetNumChildren() do
             local child = select(i, vf:GetChildren())
             if child then
-                local cdID = child.cooldownID
-                if not cdID and child.cooldownInfo then cdID = child.cooldownInfo.cooldownID end
-                if cdID then
-                    local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
-                        and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                    if info then
-                        local sid = info.spellID
-                        if sid and sid > 0 then blizzTracked[sid] = true end
+                local sid = ResolveChildSpellID(child)
+                if sid and sid > 0 then
+                    local skip = filterPassives and IsTrulyPassive(sid)
+                    if not skip then
+                        blizzTracked[sid] = true
+                        -- Map this child's cdID to the frame-resolved spellID
+                        local cdID = child.cooldownID or (child.cooldownInfo and child.cooldownInfo.cooldownID)
+                        if cdID then
+                            cdIDToChildSID[cdID] = sid
+                            -- Also update the persistent correction map
+                            if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+                                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                                if info then
+                                    local infoSid = ResolveInfoSpellID(info)
+                                    if infoSid and sid ~= infoSid then
+                                        _cdIDToCorrectSID[cdID] = sid
+                                    end
+                                end
+                            end
+                        end
                     end
                 end
             end
         end
     end
     if isBuffType then
-        ScanViewerSpellIDs("BuffIconCooldownViewer")
-        ScanViewerSpellIDs("BuffBarCooldownViewer")
+        ScanViewerSpellIDs("BuffIconCooldownViewer", false)
+        ScanViewerSpellIDs("BuffBarCooldownViewer", false)
     else
-        ScanViewerSpellIDs("EssentialCooldownViewer")
-        ScanViewerSpellIDs("UtilityCooldownViewer")
+        ScanViewerSpellIDs("EssentialCooldownViewer", true)
+        ScanViewerSpellIDs("UtilityCooldownViewer", true)
     end
 
     local spells = {}
@@ -4751,13 +4942,26 @@ function ns.GetCDMSpellsForBar(barKey)
         local knownSet = {}
         for _, id in ipairs(knownIDs) do knownSet[id] = true end
 
+        -- Passive filter only applies to cooldown categories (0/1).
+        -- Buff/debuff categories (2/3) track proc auras which are passive by
+        -- nature — filtering them would remove valid buff bar entries.
+        local filterPassives = (cat == 0 or cat == 1)
+
         for _, cdID in ipairs(allIDs) do
             if not seen[cdID] then
                 seen[cdID] = true
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info then
-                    local sid = info.spellID or 0
-                    if sid > 0 and not seenSpellID[sid] then
+                -- Prefer the frame-resolved spellID from the viewer child scan.
+                -- The cooldownInfo struct can contain the wrong spellID for buff
+                -- entries (spec aura instead of the actual tracked buff).
+                local sid = cdIDToChildSID[cdID]
+                if not sid then
+                    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                    if info then sid = ResolveInfoSpellID(info) end
+                end
+                sid = sid or 0
+                if sid > 0 and not seenSpellID[sid] then
+                    local skip = filterPassives and IsTrulyPassive(sid)
+                    if not skip then
                         local name = C_Spell.GetSpellName(sid)
                         local tex = C_Spell.GetSpellTexture(sid)
                         if name and tex then
@@ -5535,7 +5739,10 @@ function ECME:OnEnable()
     C_Timer.After(1, InstallProcGlowHooks)
 
     -- Build spellID -> cooldownID map after CDM viewer has populated
-    C_Timer.After(1.5, RebuildSpellToCooldownID)
+    C_Timer.After(1.5, function()
+        RebuildCdIDToCorrectSID()
+        RebuildSpellToCooldownID()
+    end)
 end
 
 function ECME:OnCDMFirstLogin()
@@ -5627,8 +5834,11 @@ local function TalentAwareReconcile()
                     local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
                     if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
                         local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                        if info and info.spellID and info.spellID > 0 then
-                            viewerSpells[info.spellID] = true
+                        if info then
+                            local rsid = ResolveInfoSpellID(info)
+                            if rsid and rsid > 0 then
+                                viewerSpells[rsid] = true
+                            end
                         end
                     end
                 end
@@ -5687,8 +5897,11 @@ local function TalentAwareReconcile()
                 if allIDs then
                     for _, cdID in ipairs(allIDs) do
                         local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                        if info and info.spellID and info.spellID > 0 then
-                            allSpellIDs[info.spellID] = true
+                        if info then
+                            local sid = ResolveInfoSpellID(info)
+                            if sid and sid > 0 then
+                                allSpellIDs[sid] = true
+                            end
                         end
                     end
                 end
@@ -5724,8 +5937,11 @@ local function TalentAwareReconcile()
                             local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
                             if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
                                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                                if info and info.spellID and info.spellID > 0 then
-                                    pool[info.spellID] = true
+                                if info then
+                                    local rsid = ResolveInfoSpellID(info)
+                                    if rsid and rsid > 0 then
+                                        pool[rsid] = true
+                                    end
                                 end
                             end
                         end
@@ -5741,9 +5957,21 @@ local function TalentAwareReconcile()
                                 keptSet[sid] = true
                             end
                         end
-                        for sid in pairs(pool) do
-                            if not keptSet[sid] and not removed[sid] then
-                                kept[#kept + 1] = sid
+                        -- Append new spells in stable viewer child order
+                        for ci = 1, vf:GetNumChildren() do
+                            local ch = select(ci, vf:GetChildren())
+                            if ch then
+                                local cdID2 = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
+                                if cdID2 and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+                                    local info2 = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID2)
+                                    if info2 then
+                                        local sid = info2.overrideSpellID or info2.spellID
+                                        if sid and sid > 0 and not keptSet[sid] and not removed[sid] then
+                                            kept[#kept + 1] = sid
+                                            keptSet[sid] = true
+                                        end
+                                    end
+                                end
                             end
                         end
                         barData.trackedSpells = #kept > 0 and kept or nil
@@ -5793,12 +6021,15 @@ local function TalentAwareReconcile()
                             local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
                             if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
                                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                                if info and info.spellID and info.spellID > 0 then
-                                    local sid = info.spellID
-                                    if not globalTracked[sid] then
-                                        if not barData.trackedSpells then barData.trackedSpells = {} end
-                                        barData.trackedSpells[#barData.trackedSpells + 1] = sid
-                                        globalTracked[sid] = true
+                                if info then
+                                    local sid = ResolveInfoSpellID(info)
+                                    if sid and sid > 0 then
+                                        local skip = (barData.key ~= "buffs") and IsTrulyPassive(sid)
+                                        if not skip and not globalTracked[sid] then
+                                            if not barData.trackedSpells then barData.trackedSpells = {} end
+                                            barData.trackedSpells[#barData.trackedSpells + 1] = sid
+                                            globalTracked[sid] = true
+                                        end
                                     end
                                 end
                             end
@@ -5820,20 +6051,32 @@ local function ReconcileMainBarSpells()
     local p = ECME.db and ECME.db.profile
     if not p or not p.cdmBars then return end
 
-    -- Helper: build a spellID pool from a single Blizzard viewer frame
-    local function BuildViewerPool(viewerName)
+    -- Helper: build a spellID pool from a single Blizzard viewer frame.
+    -- filterPassives=true skips spec aura passives (cooldown bars only).
+    -- Buff bars track proc auras which are passive by nature — don't filter them.
+    local function BuildViewerPool(viewerName, filterPassives)
         local pool = {}
         local vf = _G[viewerName]
         if not vf then return pool end
         for ci = 1, vf:GetNumChildren() do
             local ch = select(ci, vf:GetChildren())
             if ch then
-                local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
-                if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
-                    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                    if info then
-                        local sid = info.spellID
-                        if sid and sid > 0 then pool[sid] = true end
+                local sid = ResolveChildSpellID(ch)
+                if sid and sid > 0 then
+                    local skip = filterPassives and IsTrulyPassive(sid)
+                    if not skip then
+                        pool[sid] = true
+                        -- Update persistent correction map when frame methods work
+                        local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
+                        if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+                            local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                            if info then
+                                local infoSid = ResolveInfoSpellID(info)
+                                if infoSid and sid ~= infoSid then
+                                    _cdIDToCorrectSID[cdID] = sid
+                                end
+                            end
+                        end
                     end
                 end
             end
@@ -5844,8 +6087,9 @@ local function ReconcileMainBarSpells()
     -- Build a combined pool from ALL viewers so cross-category spells
     -- (e.g. a utility spell placed on the cooldown bar) are not stripped.
     local allViewerSpells = {}
-    for _, viewerName in pairs(BLIZZ_CDM_FRAMES) do
-        local pool = BuildViewerPool(viewerName)
+    for barKey, viewerName in pairs(BLIZZ_CDM_FRAMES) do
+        local fp = (barKey ~= "buffs")  -- filter passives for cooldown viewers only
+        local pool = BuildViewerPool(viewerName, fp)
         for sid in pairs(pool) do allViewerSpells[sid] = true end
     end
     -- Also include all known spellIDs from the API so spells that are
@@ -5862,7 +6106,34 @@ local function ReconcileMainBarSpells()
                 -- First login: full snapshot from this bar's viewer
                 SnapshotBlizzardCDM(barData.key, barData)
             else
-                local barPool = BuildViewerPool(viewerName)
+                local barPool = BuildViewerPool(viewerName, barData.key ~= "buffs")
+                -- Build a correction map: old (wrong) spellID -> correct spellID.
+                -- For buff entries the cooldownInfo struct can return a spec aura ID
+                -- while the child frame knows the real tracked spell. This lets us
+                -- silently fix saved trackedSpells that were captured with the wrong ID.
+                local sidCorrection = {}
+                do
+                    local vf = _G[viewerName]
+                    if vf then
+                        for ci = 1, vf:GetNumChildren() do
+                            local ch = select(ci, vf:GetChildren())
+                            if ch then
+                                local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
+                                if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+                                    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                                    if info then
+                                        local infoSid = ResolveInfoSpellID(info)
+                                        local childSid = ResolveChildSpellID(ch)
+                                        if infoSid and childSid and infoSid ~= childSid
+                                           and childSid > 0 and infoSid > 0 then
+                                            sidCorrection[infoSid] = childSid
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
                 -- Skip reconcile if viewer hasn't populated yet
                 local poolHasAny = false
                 for _ in pairs(barPool) do poolHasAny = true; break end
@@ -5872,9 +6143,18 @@ local function ReconcileMainBarSpells()
                     local isTalentAware = TALENT_AWARE_BAR_TYPES[barData.key]
                     local kept = {}
                     local keptSet = {}
+                    local isBuffBar = (barData.key == "buffs")
                     for i, sid in ipairs(existing) do
+                        -- Apply spellID correction: replace wrong IDs (e.g. spec aura)
+                        -- with the correct frame-resolved ID from the viewer child.
+                        if sidCorrection[sid] then sid = sidCorrection[sid] end
                         if sid and sid ~= 0 and not removed[sid] then
-                            if allViewerSpells[sid] then
+                            -- Strip passives from cooldown bars only — buff bars
+                            -- track proc auras which are passive by nature.
+                            local isPassive = (not isBuffBar) and IsTrulyPassive(sid)
+                            if isPassive then
+                                -- Silently drop — passive spells should never be on a cooldown bar
+                            elseif allViewerSpells[sid] then
                                 -- Spell exists in some viewer or is known — keep it in place
                                 kept[#kept + 1] = sid
                                 keptSet[sid] = true
@@ -5901,17 +6181,14 @@ local function ReconcileMainBarSpells()
                         for ci = 1, vf:GetNumChildren() do
                             local ch = select(ci, vf:GetChildren())
                             if ch then
-                                local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
-                                if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
-                                    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                                    if info then
-                                        local sid = info.spellID
-                                        if sid and sid > 0
-                                           and not keptSet[sid] and not removed[sid]
-                                           and not (dormant and dormant[sid]) then
-                                            newSpells[#newSpells + 1] = sid
-                                            keptSet[sid] = true  -- deduplicate
-                                        end
+                                local sid = ResolveChildSpellID(ch)
+                                if sid and sid > 0
+                                   and not keptSet[sid] and not removed[sid]
+                                   and not (dormant and dormant[sid]) then
+                                    local skip = (not isBuffBar) and IsTrulyPassive(sid)
+                                    if not skip then
+                                        newSpells[#newSpells + 1] = sid
+                                        keptSet[sid] = true  -- deduplicate
                                     end
                                 end
                             end
@@ -5926,6 +6203,10 @@ local function ReconcileMainBarSpells()
         end
     end
     BuildAllCDMBars()
+
+    -- Rebuild the persistent cdID -> correct spellID map now that viewer
+    -- children are populated. This feeds the tick cache dual mapping.
+    RebuildCdIDToCorrectSID()
 
     -- After rebuilding icons, re-apply proc glows for any spells that are
     -- still overlayed. BuildAllCDMBars wipes _blizzChild mappings; wait one
@@ -5998,6 +6279,49 @@ end
 function ECME:CDMFinishSetup()
     BuildAllCDMBars()
     ns.BuildTrackedBuffBars()
+
+    -- One-time migration: strip passive spellIDs that may have been stored
+    -- before the passive filter was added. Runs once per saved-variables file,
+    -- keyed on a flag so it never runs again after the first clean pass.
+    -- Only touches trackedSpells/customSpells — never removedSpells, dormantSpells,
+    -- positions, sizes, or any other user data.
+    do
+        local p = ECME.db and ECME.db.profile
+        if p and not p._migratedPassiveSpellIDs then
+            local function StripPassives(arr)
+                if not arr then return end
+                for i = #arr, 1, -1 do
+                    local sid = arr[i]
+                    if sid and IsTrulyPassive(sid) then
+                        table.remove(arr, i)
+                    end
+                end
+            end
+            if p.cdmBars and p.cdmBars.bars then
+                for _, barData in ipairs(p.cdmBars.bars) do
+                    -- Only strip passives from cooldown/utility bars.
+                    -- Buff bars track proc auras which are passive by nature.
+                    if barData.key ~= "buffs" then
+                        StripPassives(barData.trackedSpells)
+                        StripPassives(barData.customSpells)
+                    end
+                end
+            end
+            if p.specProfiles then
+                for _, specData in pairs(p.specProfiles) do
+                    if specData.barSpells then
+                        for barKey, barSpells in pairs(specData.barSpells) do
+                            if barKey ~= "buffs" then
+                                StripPassives(barSpells.trackedSpells)
+                                StripPassives(barSpells.customSpells)
+                            end
+                        end
+                    end
+                end
+            end
+            p._migratedPassiveSpellIDs = true
+        end
+    end
 
     -- Force Blizzard viewers on-screen briefly so their children populate,
     -- then snapshot. Handles the case where viewers never populate on their own.
@@ -6178,9 +6502,8 @@ eventFrame:SetScript("OnEvent", function(_, event, unit, updateInfo, arg3)
             local p = ECME.db and ECME.db.profile
             if p and newSpecKey == p.activeSpecKey then
                 BuildAllCDMBars()
-                -- Blizzard CDM may not be ready yet on zone-in; retry until populated
-                C_Timer.After(1, ForceResnapshotMainBars)
-                C_Timer.After(3, ForceResnapshotMainBars)
+                -- Blizzard CDM may not be ready yet on zone-in; use ForcePopulate
+                -- to ensure the viewer is fully populated before reconciling.
                 ForcePopulateBlizzardViewers(function()
                     ForceResnapshotMainBars()
                     StartResnapshotRetry()
@@ -6198,8 +6521,6 @@ eventFrame:SetScript("OnEvent", function(_, event, unit, updateInfo, arg3)
             if _specValidated then
                 C_Timer.After(0.3, function()
                     BuildAllCDMBars()
-                    C_Timer.After(1, ForceResnapshotMainBars)
-                    C_Timer.After(3, ForceResnapshotMainBars)
                     ForcePopulateBlizzardViewers(function()
                         ForceResnapshotMainBars()
                         StartResnapshotRetry()
@@ -6225,7 +6546,10 @@ eventFrame:SetScript("OnEvent", function(_, event, unit, updateInfo, arg3)
             C_Timer.After(0.5, function() BuildAllCDMBars() end)
         end
         -- Rebuild spellID -> cooldownID map after spec change (new talents may change IDs)
-        C_Timer.After(1.5, RebuildSpellToCooldownID)
+        C_Timer.After(1.5, function()
+            RebuildCdIDToCorrectSID()
+            RebuildSpellToCooldownID()
+        end)
     end
     if event == "UNIT_AURA" and unit == "player" then
         -- Throttle: buff bars only need ~5fps refresh, not every aura event
@@ -6311,7 +6635,7 @@ SlashCmdList.CDMDEBUG = function()
             if ts then
                 for i, cdID in ipairs(ts) do
                     local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                    local sid = info and (info.overrideSpellID or info.spellID)
+                    local sid = info and ResolveInfoSpellID(info)
                     p(i, "cdID="..tostring(cdID), "sid="..tostring(sid), sid and C_Spell.GetSpellName(sid) or "?")
                 end
             end
@@ -6324,7 +6648,7 @@ SlashCmdList.CDMDEBUG = function()
             local c = select(i, f:GetChildren())
             if c and c.Icon then
                 local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo and c.cooldownID and C_CooldownViewer.GetCooldownViewerCooldownInfo(c.cooldownID)
-                local sid = info and (info.overrideSpellID or info.spellID)
+                local sid = info and ResolveInfoSpellID(info)
                 p("child"..i, "cdID="..tostring(c.cooldownID), "sid="..tostring(sid), sid and C_Spell.GetSpellName(sid) or "?")
             end
         end
@@ -6358,7 +6682,7 @@ SlashCmdList.CDMSTACKS = function()
                 local resolvedSid
                 if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
                     local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                    if info then resolvedSid = info.overrideSpellID or info.spellID end
+                    if info then resolvedSid = ResolveInfoSpellID(info) end
                 end
 
                 local spellName = resolvedSid and C_Spell.GetSpellName(resolvedSid) or "?"

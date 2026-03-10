@@ -788,15 +788,19 @@ EllesmereUI.IsSmartPowerPercent = EUI_IsSmartPowerPercent
 
 do
   oUF.Tags.Methods["eui-smartpp"] = function(unit)
-      if not unit or not UnitExists(unit) then return "" end
-      local cur = UnitPower(unit) or 0
-      local max = UnitPowerMax(unit) or 0
-      if EUI_IsSmartPowerPercent() then
-          if max == 0 then return "0%" end
-          return math.floor(cur / max * 100 + 0.5) .. "%"
-      else
-          return AbbreviateLargeNumbers(cur)
-      end
+      local ok, result = pcall(function()
+        if not unit or not UnitExists(unit) then return "" end
+        local cur = UnitPower(unit)
+        local max = UnitPowerMax(unit)
+        if not cur or not max then return "" end
+        if EUI_IsSmartPowerPercent() then
+            if max == 0 then return "0%" end
+            return math.floor(cur / max * 100 + 0.5) .. "%"
+        else
+            return AbbreviateLargeNumbers(cur)
+        end
+      end)
+      return ok and result or ""
   end
   oUF.Tags.Events["eui-smartpp"] = "UNIT_POWER_UPDATE UNIT_MAXPOWER PLAYER_SPECIALIZATION_CHANGED"
 end
@@ -804,18 +808,14 @@ end
 do
   local tagName = "curhpshort"
   local function AbbrevHP(unit)
-    if not unit or not UnitExists(unit) then
-      return ""
-    end
-    if not UnitIsConnected(unit) then
-      return "OFFLINE"
-    end
-    if UnitIsDeadOrGhost(unit) then
-      return "DEAD"
-    end
-
-    local hp = UnitHealth(unit) or 0
-    return AbbreviateLargeNumbers(hp)
+    local ok, result = pcall(function()
+      if not unit or not UnitExists(unit) then return "" end
+      if not UnitIsConnected(unit) then return "OFFLINE" end
+      if UnitIsDeadOrGhost(unit) then return "DEAD" end
+      local hp = UnitHealth(unit) or 0
+      return AbbreviateLargeNumbers(hp)
+    end)
+    return ok and result or ""
   end
 
   oUF.Tags.Methods[tagName] = AbbrevHP
@@ -824,12 +824,15 @@ end
 
 do
   oUF.Tags.Methods["perhpnosign"] = function(unit)
-    if not unit or not UnitExists(unit) then return "" end
-    if not UnitIsConnected(unit) then return "OFFLINE" end
-    if UnitIsDeadOrGhost(unit) then return "DEAD" end
-    local hp, maxHP = UnitHealth(unit), UnitHealthMax(unit)
-    if maxHP == 0 then return "0" end
-    return tostring(math.floor(hp / maxHP * 100 + 0.5))
+    local ok, result = pcall(function()
+      if not unit or not UnitExists(unit) then return "" end
+      if not UnitIsConnected(unit) then return "OFFLINE" end
+      if UnitIsDeadOrGhost(unit) then return "DEAD" end
+      local hp, maxHP = UnitHealth(unit), UnitHealthMax(unit)
+      if not hp or not maxHP or maxHP == 0 then return "0" end
+      return tostring(math.floor(hp / maxHP * 100 + 0.5))
+    end)
+    return ok and result or ""
   end
   oUF.Tags.Events["perhpnosign"] = "UNIT_HEALTH UNIT_MAXHEALTH"
 end
