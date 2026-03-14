@@ -70,6 +70,7 @@ local defaults = {
     enemyInCombat = { r = 0.800, g = 0.137, b = 0.137 },
     tankHasAggro = { r = 0.05, g = 0.82, b = 0.62 },
     tankHasAggroEnabled = false,
+    classicTankAggro = false,
     tankLosingAggro = { r = 0.81, g = 0.72, b = 0.19 },
     tankNoAggro = { r = 1.00, g = 0.22, b = 0.17 },
     dpsNearAggro = { r = 0.81, g = 0.72, b = 0.19 },
@@ -113,6 +114,8 @@ local defaults = {
     nameplateOverlapV = 1.05,
     stackSpacingScale = 50,
     stackingEnabled = true,
+    hitboxScaleX = 100,
+    hitboxScaleY = 100,
     nameplateYOffset = 0,
     enemyNameTextSize = 11,
     enemyNameColor = { r = 1, g = 1, b = 1 },
@@ -483,6 +486,17 @@ local function GetHealthBarWidth()
     return BAR_W + extra
 end
 ns.GetHealthBarWidth = GetHealthBarWidth
+
+-- Returns the Y offset to apply to plate content when hitbox Y scale != 100%.
+-- SetNamePlateSize grows/shrinks the frame from its base anchor, so we shift
+-- content to keep the visual bar in the same screen position.
+local function GetHitboxYShift()
+    local db = EllesmereUINameplatesDB or defaults
+    local sy = (db.hitboxScaleY or 100) / 100
+    if sy == 1 then return 0 end
+    return -((GetHealthBarHeight() * sy) - GetHealthBarHeight()) / 2
+end
+ns.GetHitboxYShift = GetHitboxYShift
 -- Slot-based size/offset getters
 local function GetSlotSize(posKey)
     local db = EllesmereUINameplatesDB
@@ -1611,6 +1625,31 @@ function ns.RefreshStackingMotion()
     end
 end
 
+function ns.RefreshHitboxSize()
+    if InCombatLockdown() then return end
+    if not C_NamePlate or not C_NamePlate.SetNamePlateSize then return end
+    local db = EllesmereUINameplatesDB or defaults
+    local sx = (db.hitboxScaleX or 100) / 100
+    local sy = (db.hitboxScaleY or 100) / 100
+    local baseW = GetHealthBarWidth()
+    local baseH = GetHealthBarHeight()
+    local newH  = baseH * sy
+    C_NamePlate.SetNamePlateSize(baseW * sx, newH)
+    -- The frame grows upward from its base, so the extra height is all on top.
+    -- Shift the hit area down by half the extra so it's centered on the bar.
+    if C_NamePlateManager and C_NamePlateManager.SetNamePlateHitTestInsets
+       and Enum and Enum.NamePlateType then
+        C_NamePlateManager.SetNamePlateHitTestInsets(Enum.NamePlateType.Enemy, -10000, -10000, -10000, -10000)
+        C_NamePlateManager.SetNamePlateHitTestInsets(Enum.NamePlateType.Friendly, -10000, -10000, -10000, -10000)
+    end
+    -- Shift plate content to compensate for the upward frame growth
+    local yShift = GetHitboxYShift()
+    for _, plate in pairs(ns.plates) do
+        plate:ClearAllPoints()
+        plate:SetPoint("CENTER", plate.nameplate, "CENTER", 0, yShift)
+    end
+end
+
 --- Full visual refresh for all plates called when an entire preset is applied.
 --- Re-runs SetUnit on each active plate, which re-reads all DB values and applies
 --- them.  Only runs on deliberate preset switch (not per-frame or per-event).
@@ -1750,8 +1789,13 @@ local function SetupAuraCVars()
     ns.RefreshStackingMotion()
     local function ApplyNamePlateClickArea()
         if InCombatLockdown() then return end
+        local db = EllesmereUINameplatesDB or defaults
+        local sx = (db.hitboxScaleX or 100) / 100
+        local sy = (db.hitboxScaleY or 100) / 100
+        local baseH = GetHealthBarHeight()
+        local newH  = baseH * sy
         if C_NamePlate and C_NamePlate.SetNamePlateSize then
-            C_NamePlate.SetNamePlateSize(GetHealthBarWidth(), GetHealthBarHeight())
+            C_NamePlate.SetNamePlateSize(GetHealthBarWidth() * sx, newH)
         end
         if C_NamePlateManager and C_NamePlateManager.SetNamePlateHitTestInsets and Enum and Enum.NamePlateType then
             C_NamePlateManager.SetNamePlateHitTestInsets(Enum.NamePlateType.Enemy, -10000, -10000, -10000, -10000)
@@ -2370,8 +2414,9 @@ local function RefreshThreatCache()
     or (C_Garrison and C_Garrison.IsOnGarrisonMap and C_Garrison.IsOnGarrisonMap()) then
         _inThreatContent = false
     else
+        local isDelve = C_PartyInfo and C_PartyInfo.IsDelveInProgress and C_PartyInfo.IsDelveInProgress()
         _inThreatContent = (instanceType == "party" or instanceType == "raid"
-                            or difficultyID == 204)  -- delve difficulty
+                            or isDelve)
     end
     -- Role: cache so we don't recalculate on every nameplate update
     local role = UnitGroupRolesAssigned("player")
@@ -2516,7 +2561,16 @@ local function GetReactionColor(unit)
                     end
                     -- Another tank has aggro -- fall through, no warning color
                 end
-                -- Tank has aggro falls through to be handled below focus/caster/miniboss
+                -- Classic tank aggro: has-aggro overrides all mob-type colors
+                if status >= 3 then
+                    local classic = db.classicTankAggro
+                    if classic == nil then classic = defaults.classicTankAggro end
+                    if classic then
+                        local c = C("tankHasAggro")
+                        return c.r, c.g, c.b
+                    end
+                end
+                -- Default: tank has aggro falls through to caster/miniboss colors
             end
         end
     end
@@ -2816,7 +2870,7 @@ function NameplateFrame:SetUnit(unit, nameplate)
     -- Single center anchor: the entire plate moves as one unit when the
     -- nameplate bounces by 1px, preventing individual edges from rounding
     -- independently (the "pixel shimmer" / bouncing-sides issue).
-    self:SetPoint("CENTER", nameplate, "CENTER", 0, 0)
+    self:SetPoint("CENTER", nameplate, "CENTER", 0, GetHitboxYShift())
     self:SetSize(1, 1)
     self:SetFrameLevel(nameplate:GetFrameLevel() + 1)
     self:Show()
